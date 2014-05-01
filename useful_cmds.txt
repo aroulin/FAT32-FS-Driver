@@ -1,0 +1,18 @@
+// Install fuse
+sudo apt-get install libfuse2 libfuse-dev
+
+// Mount a FAT32 file system
+mkdir dest
+./vfat -s -f ./testfs.fat dest
+(other konsole) ls -l dest
+
+// Unmount
+fusermount -u -z dest
+
+// Create empty FAT32 file system
+dd if=/dev/zero of=newfs.fat bs=1M count=33
+(sudo) mkdosfs -F 32 newfs.fat
+
+// Compare with real FAT32 implementation
+sudo mount testfs.dat dest2 -o ro
+diff -r dest/ dest2/
