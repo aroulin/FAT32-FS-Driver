@@ -23,6 +23,7 @@
 struct vfat_data {
 	const char	*dev;
 	int		fs;
+	struct fat_boot  fat_boot;
 	/* XXX add your code here */
 };
 
@@ -49,7 +50,12 @@ vfat_init(const char *dev)
 	if (vfat_info.fs < 0)
 		err(1, "open(%s)", dev);
 
-	/* XXX add your code here */
+	if(read(vfat_info.fs,&vfat_info.fat_boot,512) != 512){
+		err(1,"read(%s)",dev);
+	}
+	printf("Bytes per sector:%d \n", vfat_info.fat_boot.bytes_per_sector);
+
+	
 }
 
 /* XXX add your code here */
