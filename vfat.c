@@ -58,30 +58,27 @@ vfat_init(const char *dev)
 	printf("Bytes per sector:%d \n", vfat_info.fat_boot.bytes_per_sector);
 
 	//FAT TYPE DETERMINATION:
-	if(root_max_entries !=){
+	if(vfat_info.fat_boot.root_max_entries != 0){
 		err(1,"error: should be 0\n");
 	}
-	rootDirSectors = ((root_max_entries * 32) + (bytes_per_sector – 1)) / bytes_per_sector;
+	rootDirSectors = ((vfat_info.fat_boot.root_max_entries * 32) + (vfat_info.fat_boot.bytes_per_sector – 1)) / vfat_info.fat_boot.bytes_per_sector;
 	
-	If(sectors_per_fat_small != 0){
-		fatSz = sectors_per_fat_small;	
+	if(vfat_info.fat_boot.sectors_per_fat_small != 0){
+		fatSz = vfat_info.fat_boot.sectors_per_fat_small;
+	} else{
+	fatSz = vfat_info.fat_boot.fat32.sectors_per_fat;
 	}
-    else{
-    	fatSz = sectors_per_fat;  	
-    }
-	if(total_sectors_small != 0){
-		totSec = total_sectors_small;	
+	if(vfat_info.fat_boot.total_sectors_small != 0){
+		totSec = vfat_info.fat_boot.total_sectors_small;
+	} else {
+	totSec = vfat_info.fat_boot.total_sectors;
 	}
-    else{
-    	totSec = total_sectors;	
-    }
-    
-	dataSec = totSec – (reserved_sectors + (fat_count * fatSz) + rootDirSectors);
-	countofClusters = dataSec / sectors_per_cluster;
+        dataSec = totSec – (vfat_info.fat_boot.reserved_sectors + (vfat_info.fat_boot.fat_count * fatSz) + rootDirSectors);
+	countofClusters = dataSec / vfat_info.fat_boot.sectors_per_cluster;
 
 	if(countofClusters < 4085) {
 		err(1,"error: Volume is FAT12.\n");
-	} else if(CountofClusters < 65525) {
+	} else if(countofClusters < 65525) {
     	err(1,"error: Volume is FAT16.\n");
 	} else {
     	printf("Volume is FAT32.\n");
