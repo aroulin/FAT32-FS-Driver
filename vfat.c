@@ -61,7 +61,7 @@ vfat_init(const char *dev)
 	if(vfat_info.fat_boot.root_max_entries != 0){
 		err(1,"error: should be 0\n");
 	}
-	rootDirSectors = ((vfat_info.fat_boot.root_max_entries * 32) + (vfat_info.fat_boot.bytes_per_sector – 1)) / vfat_info.fat_boot.bytes_per_sector;
+	rootDirSectors = ((vfat_info.fat_boot.root_max_entries * 32) + (vfat_info.fat_boot.bytes_per_sector - 1)) / vfat_info.fat_boot.bytes_per_sector;
 	
 	if(vfat_info.fat_boot.sectors_per_fat_small != 0){
 		fatSz = vfat_info.fat_boot.sectors_per_fat_small;
@@ -73,7 +73,7 @@ vfat_init(const char *dev)
 	} else {
 	totSec = vfat_info.fat_boot.total_sectors;
 	}
-        dataSec = totSec – (vfat_info.fat_boot.reserved_sectors + (vfat_info.fat_boot.fat_count * fatSz) + rootDirSectors);
+        dataSec = totSec - (vfat_info.fat_boot.reserved_sectors + (vfat_info.fat_boot.fat_count * fatSz) + rootDirSectors);
 	countofClusters = dataSec / vfat_info.fat_boot.sectors_per_cluster;
 
 	if(countofClusters < 4085) {
