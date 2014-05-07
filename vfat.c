@@ -38,6 +38,8 @@ time_t mount_time;
 static void
 vfat_init(const char *dev)
 {
+	uint16_t rootDirSectors;
+	uint32_t fatSz,totSec,dataSec,countofClusters;
 	iconv_utf16 = iconv_open("utf-8", "utf-16"); // from utf-16 to utf-8
 	// These are useful so that we can setup correct permissions in the mounted directories
 	mount_uid = getuid();
@@ -54,6 +56,36 @@ vfat_init(const char *dev)
 		err(1,"read(%s)",dev);
 	}
 	printf("Bytes per sector:%d \n", vfat_info.fat_boot.bytes_per_sector);
+
+	//FAT TYPE DETERMINATION:
+	if(root_max_entries !=){
+		err(1,"error: should be 0\n");
+	}
+	rootDirSectors = ((root_max_entries * 32) + (bytes_per_sector – 1)) / bytes_per_sector;
+	
+	If(sectors_per_fat_small != 0){
+		fatSz = sectors_per_fat_small;	
+	}
+    else{
+    	fatSz = sectors_per_fat;  	
+    }
+	if(total_sectors_small != 0){
+		totSec = total_sectors_small;	
+	}
+    else{
+    	totSec = total_sectors;	
+    }
+    
+	dataSec = totSec – (reserved_sectors + (fat_count * fatSz) + rootDirSectors);
+	countofClusters = dataSec / sectors_per_cluster;
+
+	if(countofClusters < 4085) {
+		err(1,"error: Volume is FAT12.\n");
+	} else if(CountofClusters < 65525) {
+    	err(1,"error: Volume is FAT16.\n");
+	} else {
+    	printf("Volume is FAT32.\n");
+	}
 
 	
 }
