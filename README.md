@@ -4,7 +4,7 @@ FAT32-FS-Driver
 Operating Systems Assignment 3
 
 - [x] Read the first 512 bytes of the device
-- [ ] Parse BPB sector, read basic information (sector size, sectors per cluster, FAT
+- [x] Parse BPB sector, read basic information (sector size, sectors per cluster, FAT
       size, current FAT id, etc.) and verify the filesystem is FAT32
 - [ ] Locate and read raw data from the correct FAT table, then make sure you can
       follow cluster allocation chains
