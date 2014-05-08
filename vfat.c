@@ -66,28 +66,121 @@ vfat_init(const char *dev)
 	if(vfat_info.fat_boot.sectors_per_fat_small != 0){
 		fatSz = vfat_info.fat_boot.sectors_per_fat_small;
 	} else{
-	fatSz = vfat_info.fat_boot.fat32.sectors_per_fat;
+		fatSz = vfat_info.fat_boot.fat32.sectors_per_fat;
 	}
 	if(vfat_info.fat_boot.total_sectors_small != 0){
 		totSec = vfat_info.fat_boot.total_sectors_small;
 	} else {
-	totSec = vfat_info.fat_boot.total_sectors;
+		totSec = vfat_info.fat_boot.total_sectors;
 	}
+	
         dataSec = totSec - (vfat_info.fat_boot.reserved_sectors + (vfat_info.fat_boot.fat_count * fatSz) + rootDirSectors);
 	countofClusters = dataSec / vfat_info.fat_boot.sectors_per_cluster;
 
 	if(countofClusters < 4085) {
 		err(1,"error: Volume is FAT12.\n");
 	} else if(countofClusters < 65525) {
-    	err(1,"error: Volume is FAT16.\n");
+    		err(1,"error: Volume is FAT16.\n");
 	} else {
-    	printf("Volume is FAT32.\n");
+    		printf("Volume is FAT32.\n");
 	}
-
-	
 }
 
 /* XXX add your code here */
+
+unsigned char
+chkSum (unsigned char *pFcbName)
+	{
+		short fcbNameLen;
+		unsigned char sum;
+
+		sum = 0;
+		for (fcbNameLen=11; fcbNameLen!=0; fcbNameLen--) {
+			// NOTE: The operation is an unsigned char rotate right
+			sum = ((sum & 1) ? 0x80 : 0) + (sum >> 1) + *pFcbName++;
+		}
+		return (sum);
+	}
+
+
+static int
+test_read(void) {
+	unsigned char check_sum = NULL;
+	int i, j, has_long_name = 0;
+	uint32_t fatSz, first_data_sec;
+	struct fat32_direntry short_entry;
+	struct fat32_direntry_long long_entry;
+
+        fatSz = vfat_info.fat_boot.fat32.sectors_per_fat;
+	
+	first_data_sec = vfat_info.fat_boot.reserved_sectors + fatSz * vfat_info.fat_boot.fat_count;
+	
+	if(lseek(vfat_info.fs, first_data_sec*vfat_info.fat_boot.bytes_per_sector, SEEK_CUR) == -1) {
+		err(1, "lseek(%d)", first_data_sec*vfat_info.fat_boot.bytes_per_sector);
+	}
+	
+	for(i = 0; i < vfat_info.fat_boot.sectors_per_cluster*vfat_info.fat_boot.bytes_per_sector; i+=32) {
+		if(read(vfat_info.fs, &short_entry, 32) != 32){
+			err(1, "read(short_dir)");
+		}
+		
+		if((0x0F & short_entry.attr) == 0x0F) {
+			has_long_name = 1;
+			continue;			
+		} else if(!has_long_name){
+			if(short_entry.nameext[0] == 0xE5) {
+				continue;
+			} else if(short_entry.nameext[0] == 0x00) {
+				break;
+			} else if(short_entry.nameext[0] == 0x05) {
+				short_entry.name1[0] = 0xE5;
+			}
+			
+			DEBUG_PRINT("name of current dir: ");
+			
+			for(j = 0; j < 2; j++) {
+				DEBUG_PRINT("%c", short_entry.nameext[j]);
+			}
+			DEBUG_PRINT("\n");
+		} else {
+			check_sum = chkSum(&(short_entry.nameext));
+			
+			while(true) {
+				i-=64;
+				if(lseek(vfat_info.fs, -64, SEEK_CUR) == -1) {
+					err(1, "lseek(%d)", -64);
+				}
+			
+				if(read(vfat_info.fs, &long_entry, 32) != 32){
+					err(1, "read(long_dir)");
+				}
+			
+				if(long_entry.csum != check_sum) {
+					err(1, "");
+				} else {
+				
+					DEBUG_PRINT("name of current dir: ");
+					for(j = 0; j < 5 && short_entry.name1[j] != 0xFFFF; j++) {
+						DEBUG_PRINT("%c", short_entry.name1[j]);
+					}
+					for(j = 0; j < 6  && short_entry.name2[j] != 0xFFFF; j++) {
+						DEBUG_PRINT("%c", short_entry.name2[j]);
+					}
+					for(j = 0; j < 3  && short_entry.name3[j] != 0xFFFF; j++) {
+						DEBUG_PRINT("%c", short_entry.name3[j]);
+					}
+					DEBUG_PRINT("\n");
+					
+					if((0xF0 & long_entry.seq) == 0x40) {
+						break;
+					}
+				}
+			}
+		}
+	}
+	
+	return 0;
+}
 
 static int
 vfat_readdir(uint32_t first_cluster, fuse_fill_dir_t filler, void *fillerdata)
@@ -230,5 +323,6 @@ main(int argc, char **argv)
 		errx(1, "missing file system parameter");
 
 	vfat_init(vfat_info.dev);
-	return (fuse_main(args.argc, args.argv, &vfat_available_ops, NULL));
+	test_read();
+	return 0;//(fuse_main(args.argc, args.argv, &vfat_available_ops, NULL));
 }
