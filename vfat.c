@@ -50,7 +50,7 @@ vfat_init(const char *dev)
 
 	// Open the FAT file
 	vfat_info.fs = open(dev, O_RDONLY);
-	
+
 	if (vfat_info.fs < 0) {
 		err(1, "open(%s)", dev);
 	}
@@ -63,9 +63,9 @@ vfat_init(const char *dev)
 	if(vfat_info.fat_boot.root_max_entries != 0) {
 		err(1,"error: should be 0\n");
 	}
-	rootDirSectors = ((vfat_info.fat_boot.root_max_entries * 32) + 
+	rootDirSectors = ((vfat_info.fat_boot.root_max_entries * 32) +
 		(vfat_info.fat_boot.bytes_per_sector - 1)) / vfat_info.fat_boot.bytes_per_sector;
-	
+
 	if(vfat_info.fat_boot.sectors_per_fat_small != 0){
 		fatSz = vfat_info.fat_boot.sectors_per_fat_small;
 	} else{
@@ -77,22 +77,22 @@ vfat_init(const char *dev)
 	} else {
 		totSec = vfat_info.fat_boot.total_sectors;
 	}
-	
-    dataSec = totSec - (vfat_info.fat_boot.reserved_sectors + 
-    	(vfat_info.fat_boot.fat_count * fatSz) + rootDirSectors);
+
+	dataSec = totSec - (vfat_info.fat_boot.reserved_sectors +
+	(vfat_info.fat_boot.fat_count * fatSz) + rootDirSectors);
 	countofClusters = dataSec / vfat_info.fat_boot.sectors_per_cluster;
 
 	if(countofClusters < 4085) {
 		err(1,"error: Volume is FAT12.\n");
 	} else if(countofClusters < 65525) {
-    	err(1,"error: Volume is FAT16.\n");
+		err(1,"error: Volume is FAT16.\n");
 	} else {
-    	printf("Volume is FAT32.\n");
+		printf("Volume is FAT32.\n");
 	}
 
 	// Check all other fields
-	if(*((char*)&vfat_info.fat_boot)[510] != 0x55 &&
-		*((char*)&vfat_info.fat_boot)[511] != 0xAA) {
+	if(((char*)&vfat_info.fat_boot)[510] != 0x55 &&
+		((char*)&vfat_info.fat_boot)[511] != 0xAA) {
 		err(1, "Magic number 0xAA55 not present\n");
 	}
 
@@ -104,10 +104,10 @@ vfat_init(const char *dev)
 		err(1, "jmp_boot[0] is wrong\n");
 	}
 
-	if(vfat_info.fat_boot.jmp_boot.bytes_per_sector != 512 &&
-		vfat_info.fat_boot.jmp_boot.bytes_per_sector != 1024 &&
-		vfat_info.fat_boot.jmp_boot.bytes_per_sector != 2048 &&
-		vfat_info.fat_boot.jmp_boot.bytes_per_sector != 5096 &&) {
+	if(vfat_info.fat_boot.bytes_per_sector != 512 &&
+		vfat_info.fat_boot.bytes_per_sector != 1024 &&
+		vfat_info.fat_boot.bytes_per_sector != 2048 &&
+		vfat_info.fat_boot.bytes_per_sector != 5096) {
 
 		err(1, "bytes_per_sector is wrong\n");
 	}
@@ -117,7 +117,7 @@ vfat_init(const char *dev)
 		err(1, "sectors_per_cluster is wrong\n");
 	}
 
-	if(vfat_info.fat_boot.sectors_per_cluster * 
+	if(vfat_info.fat_boot.sectors_per_cluster *
 		vfat_info.fat_boot.bytes_per_sector > 32 * 1024) {
 		err(1, "bytes_per_sector * sectors_per_cluster is too large\n");
 	}
@@ -138,7 +138,7 @@ vfat_init(const char *dev)
 		err(1, "total_sectors_small must be zero\n");
 	}
 
-	if(vfat_info.fat_boot.media_info != 0xF0 && 
+	if(vfat_info.fat_boot.media_info != 0xF0 &&
 		vfat_info.fat_boot.media_info < 0xF8) {
 		err(1, "wrong media info\n");
 		//TODO CHECK same number in FAT[0]
@@ -154,6 +154,8 @@ vfat_init(const char *dev)
 
 	// Microsoft specs do not say anything to be forced about sectors_per_fat
 	// and other fields of fat_boot_fat32 so we don't check them
+
+	printf("Volume seems really FAT32.\n");
 }
 
 unsigned char
@@ -181,22 +183,22 @@ test_read(void) {
 	struct fat32_direntry_long long_entry;
 
         fatSz = vfat_info.fat_boot.fat32.sectors_per_fat;
-	
+
 	first_data_sec = vfat_info.fat_boot.reserved_sectors + fatSz * vfat_info.fat_boot.fat_count;
-	
+
 	if(lseek(vfat_info.fs, first_data_sec*vfat_info.fat_boot.bytes_per_sector, SEEK_CUR) == -1) {
 		err(1, "lseek(%d)", first_data_sec*vfat_info.fat_boot.bytes_per_sector);
 	}
-	
+
 	for(i = 0; i < vfat_info.fat_boot.sectors_per_cluster*vfat_info.fat_boot.bytes_per_sector; i+=32) {
 		if(read(vfat_info.fs, &short_entry, 32) != 32){
 			err(1, "read(short_dir)");
 		}
-		
+
 		// Long name
 		if((short_entry.attr & 0x0F) == 0x0F) {
 			long_entry = *((struct fat32_direntry_long *) (&short_entry));
-			
+
 			// Last of the sequence of long names
 			if((long_entry.seq & 0xF0) == 0x40) {
 				// Check 1st byte of name
@@ -207,7 +209,7 @@ test_read(void) {
 				} else if(long_entry.name1[0] == 0x05) {
 					long_entry.name1[0] = 0xE5;
 				}
-				
+
 				// Copy long name into buffer
 				for(j = 0; j < 5 && long_entry.name1[j] != 0xFF; j++) {
 					buffer[index_buffer] = long_entry.name1[j];
@@ -221,7 +223,7 @@ test_read(void) {
 					buffer[index_buffer] = long_entry.name3[j];
 					index_buffer += 1;
 				}
-				
+
 				seq_nb = long_entry.seq & 0x0F;
 				check_sum = long_entry.csum;
 			}
@@ -236,13 +238,13 @@ test_read(void) {
 				} else if(long_entry.name1[0] == 0x05) {
 					long_entry.name1[0] = 0xE5;
 				}
-				
+
 				// Add name in the first part of the buffer
 				char tmp[260];
 				for(j = 0; j < 260; j++) {
 					tmp[j] = buffer[j];
 				}
-				
+
 				// Copy long name into buffer
 				for(j = 0; j < 5; j++) {
 					if(j < 5 && long_entry.name1[j] != 0xFF) {
@@ -258,7 +260,7 @@ test_read(void) {
 						buffer[j] = tmp[j - 14];
 					}
 				}
-			} 
+			}
 			// Error
 			else {
 				seq_nb = 0;
@@ -267,7 +269,7 @@ test_read(void) {
 					buffer[j] = '\0';
 				}
 			}
-		} 
+		}
 		// Short name after a sequence of long names
 		else if(check_sum != '\0' && seq_nb == 0 && chkSum(&(short_entry.nameext)) == check_sum) {
 			// Check 1st byte of name
@@ -278,14 +280,14 @@ test_read(void) {
 			} else if(short_entry.nameext[0] == 0x05) {
 				short_entry.nameext[0] = 0xE5;
 			}
-			
+
 			DEBUG_PRINT("Long name of file/dir: ");
 			for(j = 0; j < 260 && j != '\0'; j++) {
 				DEBUG_PRINT("%c", buffer[j]);
 			}
 			DEBUG_PRINT("\n");
 			// Do stuff...
-			
+
 			// Init buffer, check_sum. No need for seq_nb since it is already 0
 			for(j = 0; j < 260; j++) {
 				buffer[j] = '\0';
@@ -299,7 +301,7 @@ test_read(void) {
 				buffer[j] = '\0';
 			}
 			check_sum = '\0';
-			
+
 			// Check 1st byte of name
 			if(short_entry.nameext[0] == 0xE5) {
 				continue;
@@ -308,7 +310,7 @@ test_read(void) {
 			} else if(short_entry.nameext[0] == 0x05) {
 				short_entry.nameext[0] = 0xE5;
 			}
-					
+
 			DEBUG_PRINT("Short name of file/dir: ");
 			for(j = 0; j < 5 && j != 0xFFFF; j++) {
 				DEBUG_PRINT("%c", short_entry.nameext[j]);
@@ -317,7 +319,7 @@ test_read(void) {
 			// Do stuff...
 		}
 	}
-	
+
 	return 0;
 }
 
@@ -431,7 +433,7 @@ vfat_fuse_read(const char *path, char *buf, size_t size, off_t offs,
 	buf[1] = 'Y';
 	/* XXX add your code here */
 	return 2; // number of bytes read from the file
-		  // must be size unless EOF reached, negative for an error 
+		  // must be size unless EOF reached, negative for an error
 }
 
 ////////////// No need to modify anything below this point
