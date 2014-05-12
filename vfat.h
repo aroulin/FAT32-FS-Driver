@@ -8,7 +8,7 @@ struct fat_boot_fat32 {
 	/*36*/	uint32_t	sectors_per_fat;//BPB_FATSz32
 	/*40*/	uint16_t	fat_flags;
 	/*42*/	uint16_t	version;
-	/*44*/	uint32_t	root_cluster;
+	/*44*/	uint32_t	root_cluster;//BPB_RootClus
 	/*48*/	uint16_t	fsinfo_sector;
 	/*50*/	uint16_t	backup_sector;
 	/*52*/	uint8_t		reserved2[12];
@@ -25,12 +25,12 @@ struct fat_boot {
 	/* 0*/	uint8_t		jmp_boot[3];
 	/* 3*/	char		oemname[8];
 	/*11*/	uint16_t	bytes_per_sector;//BPB_BytsPerSec 
-	/*13*/	uint8_t		sectors_per_cluster;
-	/*14*/	uint16_t	reserved_sectors;
-	/*16*/	uint8_t		fat_count;
+	/*13*/	uint8_t		sectors_per_cluster;//BPB_RsvdSecCnt
+	/*14*/	uint16_t	reserved_sectors;//BPB_RsvdSecCnt
+	/*16*/	uint8_t		fat_count;//BPB_NumFATs
 	/*17*/	uint16_t	root_max_entries; //BPB_RootEntCnt
 	/*19*/	uint16_t	total_sectors_small;//BPB_TotSec16
-	/*21*/	uint8_t		media_info;
+	/*21*/	uint8_t		media_info;//BPB_Media
 	/*22*/	uint16_t	sectors_per_fat_small;//BPB_FATSz16 
 	/*24*/	uint16_t	sectors_per_track;
 	/*26*/	uint16_t	head_count;

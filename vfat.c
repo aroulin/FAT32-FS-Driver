@@ -48,45 +48,113 @@ vfat_init(const char *dev)
 	// Use mount time as mtime and ctime for the filesystem root entry (e.g. "/")
 	mount_time = time(NULL);
 
+	// Open the FAT file
 	vfat_info.fs = open(dev, O_RDONLY);
-	if (vfat_info.fs < 0)
+	
+	if (vfat_info.fs < 0) {
 		err(1, "open(%s)", dev);
+	}
 
-	if(read(vfat_info.fs,&vfat_info.fat_boot,512) != 512){
+	if(read(vfat_info.fs,&vfat_info.fat_boot,512) != 512) {
 		err(1,"read(%s)",dev);
 	}
-	printf("Bytes per sector:%d \n", vfat_info.fat_boot.bytes_per_sector);
 
-	//FAT TYPE DETERMINATION:
-	if(vfat_info.fat_boot.root_max_entries != 0){
+	// Fat Type Determination:
+	if(vfat_info.fat_boot.root_max_entries != 0) {
 		err(1,"error: should be 0\n");
 	}
-	rootDirSectors = ((vfat_info.fat_boot.root_max_entries * 32) + (vfat_info.fat_boot.bytes_per_sector - 1)) / vfat_info.fat_boot.bytes_per_sector;
+	rootDirSectors = ((vfat_info.fat_boot.root_max_entries * 32) + 
+		(vfat_info.fat_boot.bytes_per_sector - 1)) / vfat_info.fat_boot.bytes_per_sector;
 	
 	if(vfat_info.fat_boot.sectors_per_fat_small != 0){
 		fatSz = vfat_info.fat_boot.sectors_per_fat_small;
 	} else{
 		fatSz = vfat_info.fat_boot.fat32.sectors_per_fat;
 	}
+
 	if(vfat_info.fat_boot.total_sectors_small != 0){
 		totSec = vfat_info.fat_boot.total_sectors_small;
 	} else {
 		totSec = vfat_info.fat_boot.total_sectors;
 	}
 	
-        dataSec = totSec - (vfat_info.fat_boot.reserved_sectors + (vfat_info.fat_boot.fat_count * fatSz) + rootDirSectors);
+    dataSec = totSec - (vfat_info.fat_boot.reserved_sectors + 
+    	(vfat_info.fat_boot.fat_count * fatSz) + rootDirSectors);
 	countofClusters = dataSec / vfat_info.fat_boot.sectors_per_cluster;
 
 	if(countofClusters < 4085) {
 		err(1,"error: Volume is FAT12.\n");
 	} else if(countofClusters < 65525) {
-    		err(1,"error: Volume is FAT16.\n");
+    	err(1,"error: Volume is FAT16.\n");
 	} else {
-    		printf("Volume is FAT32.\n");
+    	printf("Volume is FAT32.\n");
 	}
-}
 
-/* XXX add your code here */
+	// Check all other fields
+	if(*((char*)&vfat_info.fat_boot)[510] != 0x55 &&
+		*((char*)&vfat_info.fat_boot)[511] != 0xAA) {
+		err(1, "Magic number 0xAA55 not present\n");
+	}
+
+	if(vfat_info.fat_boot.jmp_boot[0] == 0xEB) {
+		if(vfat_info.fat_boot.jmp_boot[2] != 0x90) {
+			err(1, "jmp_boot[2] is wrong\n");
+		}
+	} else if(vfat_info.fat_boot.jmp_boot[0] != 0xE9){
+		err(1, "jmp_boot[0] is wrong\n");
+	}
+
+	if(vfat_info.fat_boot.jmp_boot.bytes_per_sector != 512 &&
+		vfat_info.fat_boot.jmp_boot.bytes_per_sector != 1024 &&
+		vfat_info.fat_boot.jmp_boot.bytes_per_sector != 2048 &&
+		vfat_info.fat_boot.jmp_boot.bytes_per_sector != 5096 &&) {
+
+		err(1, "bytes_per_sector is wrong\n");
+	}
+
+	if(vfat_info.fat_boot.sectors_per_cluster != 1 &&
+		vfat_info.fat_boot.sectors_per_cluster % 2 != 0) {
+		err(1, "sectors_per_cluster is wrong\n");
+	}
+
+	if(vfat_info.fat_boot.sectors_per_cluster * 
+		vfat_info.fat_boot.bytes_per_sector > 32 * 1024) {
+		err(1, "bytes_per_sector * sectors_per_cluster is too large\n");
+	}
+
+	if(vfat_info.fat_boot.reserved_sectors == 0) {
+		err(1, "reserved_sectors is zero\n");
+	}
+
+	if(vfat_info.fat_boot.fat_count < 2) {
+		err(1, "fat count is less than two\n");
+	}
+
+	if(vfat_info.fat_boot.root_max_entries != 0) {
+		err(1, "root_max_entries must be zero\n");
+	}
+
+	if(vfat_info.fat_boot.total_sectors_small != 0) {
+		err(1, "total_sectors_small must be zero\n");
+	}
+
+	if(vfat_info.fat_boot.media_info != 0xF0 && 
+		vfat_info.fat_boot.media_info < 0xF8) {
+		err(1, "wrong media info\n");
+		//TODO CHECK same number in FAT[0]
+	}
+
+	if(vfat_info.fat_boot.sectors_per_fat_small != 0) {
+		err(1, "sectors per fat small must be zero\n");
+	}
+
+	if(vfat_info.fat_boot.total_sectors == 0) {
+		err(1, "total_sectors must be non-zero\n");
+	}
+
+	// Microsoft specs do not say anything to be forced about sectors_per_fat
+	// and other fields of fat_boot_fat32 so we don't check them
+}
 
 unsigned char
 chkSum (unsigned char *pFcbName)
