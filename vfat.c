@@ -327,7 +327,7 @@ test_read(void) {
 }
 
 static int
-vfat_readdir(uint32_t first_cluster, fuse_fill_dir_t filler, void *fillerdata)
+vfat_readdir(fuse_fill_dir_t filler, void *fillerdata)
 {
 	struct stat st; // we can reuse same stat entry over and over again
 	void *buf = NULL;
@@ -339,7 +339,7 @@ vfat_readdir(uint32_t first_cluster, fuse_fill_dir_t filler, void *fillerdata)
 	st.st_gid = mount_gid;
 	st.st_nlink = 1;
 
-	/* XXX add your code here */
+
 }
 
 
@@ -412,14 +412,27 @@ vfat_fuse_getattr(const char *path, struct stat *st)
 	return -ENOENT;
 }
 
+void seek_cluster(uint32_t cluster_no) {
+    if(cluster_no < 2) {
+	err(1, "cluster number < 2");
+    }
+
+    uint32_t firstDataSector = vfat_info.fat_boot.reserved_sectors +
+	(vfat_info.fat_boot.fat_count * vfat_info.fat_boot.fat32.sectors_per_fat);
+    uint32_t firstSectorofCluster = ((cluster_no - 2) * vfat_info.fat_boot.sectors_per_cluster) + firstDataSector;
+    if(lseek(vfat_info.fs, firstSectorofCluster * vfat_info.fat_boot.bytes_per_sector, SEEK_SET) == -1) {
+	err(1, "lseek cluster_no %d\n", cluster_no);
+    }
+}
+
 static int
 vfat_fuse_readdir(const char *path, void *buf,
 		  fuse_fill_dir_t filler, off_t offs, struct fuse_file_info *fi)
 {
-	/* XXX: This is example code, replace with your own implementation */
 	DEBUG_PRINT("fuse readdir %s\n", path);
 	//assert(offs == 0);
-	/* XXX add your code here */
+	seek_cluster(vfat_info.fat_boot.fat32.root_cluster);
+	vfat_readdir(filler, buf);
 	filler(buf, "a.txt", NULL, 0);
 	filler(buf, "b.txt", NULL, 0);
 	return 0;
