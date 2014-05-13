@@ -48,45 +48,118 @@ vfat_init(const char *dev)
 	// Use mount time as mtime and ctime for the filesystem root entry (e.g. "/")
 	mount_time = time(NULL);
 
+	// Open the FAT file
 	vfat_info.fs = open(dev, O_RDONLY);
-	if (vfat_info.fs < 0)
-		err(1, "open(%s)", dev);
 
-	if(read(vfat_info.fs,&vfat_info.fat_boot,512) != 512){
+	if (vfat_info.fs < 0) {
+		err(1, "open(%s)", dev);
+	}
+
+	if(read(vfat_info.fs,&vfat_info.fat_boot,512) != 512) {
 		err(1,"read(%s)",dev);
 	}
-	printf("Bytes per sector:%d \n", vfat_info.fat_boot.bytes_per_sector);
 
-	//FAT TYPE DETERMINATION:
-	if(vfat_info.fat_boot.root_max_entries != 0){
+	// Fat Type Determination:
+	if(vfat_info.fat_boot.root_max_entries != 0) {
 		err(1,"error: should be 0\n");
 	}
-	rootDirSectors = ((vfat_info.fat_boot.root_max_entries * 32) + (vfat_info.fat_boot.bytes_per_sector - 1)) / vfat_info.fat_boot.bytes_per_sector;
-	
+	rootDirSectors = ((vfat_info.fat_boot.root_max_entries * 32) +
+		(vfat_info.fat_boot.bytes_per_sector - 1)) / vfat_info.fat_boot.bytes_per_sector;
+
 	if(vfat_info.fat_boot.sectors_per_fat_small != 0){
 		fatSz = vfat_info.fat_boot.sectors_per_fat_small;
 	} else{
 		fatSz = vfat_info.fat_boot.fat32.sectors_per_fat;
 	}
+
 	if(vfat_info.fat_boot.total_sectors_small != 0){
 		totSec = vfat_info.fat_boot.total_sectors_small;
 	} else {
 		totSec = vfat_info.fat_boot.total_sectors;
 	}
-	
-        dataSec = totSec - (vfat_info.fat_boot.reserved_sectors + (vfat_info.fat_boot.fat_count * fatSz) + rootDirSectors);
+
+	dataSec = totSec - (vfat_info.fat_boot.reserved_sectors +
+	(vfat_info.fat_boot.fat_count * fatSz) + rootDirSectors);
 	countofClusters = dataSec / vfat_info.fat_boot.sectors_per_cluster;
 
 	if(countofClusters < 4085) {
 		err(1,"error: Volume is FAT12.\n");
 	} else if(countofClusters < 65525) {
-    		err(1,"error: Volume is FAT16.\n");
+		err(1,"error: Volume is FAT16.\n");
 	} else {
-    		printf("Volume is FAT32.\n");
+		printf("Volume is FAT32.\n");
+	}
+
+	// Check all other fields
+	if(((char*)&vfat_info.fat_boot)[510] != 0x55 &&
+		((char*)&vfat_info.fat_boot)[511] != 0xAA) {
+		err(1, "Magic number 0xAA55 not present\n");
+	}
+
+	if(vfat_info.fat_boot.jmp_boot[0] == 0xEB) {
+		if(vfat_info.fat_boot.jmp_boot[2] != 0x90) {
+			err(1, "jmp_boot[2] is wrong\n");
+		}
+	} else if(vfat_info.fat_boot.jmp_boot[0] != 0xE9){
+		err(1, "jmp_boot[0] is wrong\n");
+	}
+
+	if(vfat_info.fat_boot.bytes_per_sector != 512 &&
+		vfat_info.fat_boot.bytes_per_sector != 1024 &&
+		vfat_info.fat_boot.bytes_per_sector != 2048 &&
+		vfat_info.fat_boot.bytes_per_sector != 5096) {
+
+		err(1, "bytes_per_sector is wrong\n");
+	}
+
+	if(vfat_info.fat_boot.sectors_per_cluster != 1 &&
+		vfat_info.fat_boot.sectors_per_cluster % 2 != 0) {
+		err(1, "sectors_per_cluster is wrong\n");
+	}
+
+	if(vfat_info.fat_boot.sectors_per_cluster *
+		vfat_info.fat_boot.bytes_per_sector > 32 * 1024) {
+		err(1, "bytes_per_sector * sectors_per_cluster is too large\n");
+	}
+
+	if(vfat_info.fat_boot.reserved_sectors == 0) {
+		err(1, "reserved_sectors is zero\n");
+	}
+
+	if(vfat_info.fat_boot.fat_count < 2) {
+		err(1, "fat count is less than two\n");
+	}
+
+	if(vfat_info.fat_boot.root_max_entries != 0) {
+		err(1, "root_max_entries must be zero\n");
+	}
+
+	if(vfat_info.fat_boot.total_sectors_small != 0) {
+		err(1, "total_sectors_small must be zero\n");
+	}
+
+	if(vfat_info.fat_boot.media_info != 0xF0 &&
+		vfat_info.fat_boot.media_info < 0xF8) {
+		err(1, "wrong media info\n");
+		//TODO CHECK same number in FAT[0]
+	}
+
+	if(vfat_info.fat_boot.sectors_per_fat_small != 0) {
+		err(1, "sectors per fat small must be zero\n");
+	}
+
+	if(vfat_info.fat_boot.total_sectors == 0) {
+		err(1, "total_sectors must be non-zero\n");
+	}
+
+	// Microsoft specs do not say anything to be forced about sectors_per_fat
+	// and other fields of fat_boot_fat32 so we don't check them
+
+	printf("Volume seems really FAT32.\n");
+	if(lseek(vfat_info.fs, -512, SEEK_CUR) == -1) {
+		err(1, "lseek(-512)");
 	}
 }
-
-/* XXX add your code here */
 
 unsigned char
 chkSum (unsigned char *pFcbName) {
@@ -113,108 +186,26 @@ test_read(void) {
 
 	// No need to check for FAT32 anymore
         fatSz = vfat_info.fat_boot.fat32.sectors_per_fat;
-	
+
 	first_data_sec = vfat_info.fat_boot.reserved_sectors + fatSz * vfat_info.fat_boot.fat_count;
-	
+
 	if(lseek(vfat_info.fs, first_data_sec*vfat_info.fat_boot.bytes_per_sector, SEEK_CUR) == -1) {
 		err(1, "lseek(%d)", first_data_sec*vfat_info.fat_boot.bytes_per_sector);
 	}
-	
-	// test
+
 	for(i = 0; i < vfat_info.fat_boot.sectors_per_cluster*vfat_info.fat_boot.bytes_per_sector; i+=32) {
 		if(read(vfat_info.fs, &short_entry, 32) != 32){
 			err(1, "read(short_dir)");
 		}
-		// Long name
-		if(short_entry.attr == 15) {
-			long_entry = *((struct fat32_direntry_long *) (&short_entry));
-			
-			// Last of the sequence of long names
-			if((long_entry.seq & 0x40) == 0x40) {
-				// Copy long name into buffer
-				for(j = 0; j < 5 && long_entry.name1[j] != 0xff; j++) {
-					buffer[index_buffer] = long_entry.name1[j];
-					index_buffer += 1;
-				}
-				for(j = 0; j < 6 && long_entry.name2[j] != 0xff; j++) {
-					buffer[index_buffer] = long_entry.name2[j];
-					index_buffer += 1;
-				}
-				for(j = 0; j < 3 && long_entry.name3[j] != 0xff; j++) {
-					buffer[index_buffer] = long_entry.name3[j];
-					index_buffer += 1;
-				}
-				
-				seq_nb = long_entry.seq & 0x0f - 1;
-				check_sum = (unsigned char) long_entry.csum;
-			}
-			// Middle of sequence of long names
-			else if(long_entry.csum == check_sum && seq_nb == long_entry.seq) {
-				// Add name in the first part of the buffer
-				char tmp[260];
-				for(j = 0; j < 260; j++) {
-					tmp[j] = buffer[j];
-				}
-				
-				// Copy long name into buffer
-				for(j = 0; j < 5; j++) {
-					if(j < 5 && long_entry.name1[j] != 0xff) {
-						buffer[j] = long_entry.name1[j];
-						index_buffer += 1;
-					} else if(j < 11 && long_entry.name2[j - 5] != 0xff) {
-						buffer[j] = long_entry.name2[j - 5];
-						index_buffer += 1;
-					} else if(j < 14 && long_entry.name3[j - 11] != 0xff) {
-						buffer[j] = long_entry.name3[j - 11];
-						index_buffer += 1;
-					} else {
-						buffer[j] = tmp[j - 14];
-					}
-				}
-			} 
-			// Error
-			else {
-				DEBUG_PRINT("Error reading name: %s%s%s\n", long_entry.name1, long_entry.name2, long_entry.name3);
-				DEBUG_PRINT("Seq_nb: %x, Check_sum: %d\n", long_entry.seq, long_entry.csum);
-				seq_nb = 0;
-				check_sum = '\0';
-				memset(buffer, 0, 260);
-			}
-		}
-		// Short name after a sequence of long names
-		else if(seq_nb == 0 && ((uint8_t) chkSum(&(short_entry.nameext))) == check_sum) {
-			DEBUG_PRINT("Long name of file/dir: %s\n", buffer);
-			// Do stuff...
-			
-			// Init buffer, check_sum. No need for seq_nb since it is already 0
-			memset(buffer, 0, 260);
-			check_sum = '\0';
-		}
-		// Short name in the middle of a sequence of long names or placed alone (normally)
-		else {
-			// Init buffer, check_sum, seq_nb
-			memset(buffer, 0, 260);
-			check_sum = '\0';
-			
-			// Check 1st byte of name
-			if(short_entry.nameext[0] == 0xe5) {
-				continue;
-			} else if(short_entry.nameext[0] == 0x00) {
-				break;
-			} else if(short_entry.nameext[0] == 0x05) {
-				short_entry.nameext[0] = 0xe5;
-			}
-					
-			DEBUG_PRINT("Short name of file/dir: %s\n", short_entry.nameext);
-			// Do stuff...
-		}
+
+		
 	}
-	
+
 	return 0;
 }
 
 static int
-vfat_readdir(uint32_t first_cluster, fuse_fill_dir_t filler, void *fillerdata)
+vfat_readdir(fuse_fill_dir_t filler, void *fillerdata)
 {
 	struct stat st; // we can reuse same stat entry over and over again
 	void *buf = NULL;
@@ -226,7 +217,7 @@ vfat_readdir(uint32_t first_cluster, fuse_fill_dir_t filler, void *fillerdata)
 	st.st_gid = mount_gid;
 	st.st_nlink = 1;
 
-	/* XXX add your code here */
+
 }
 
 
@@ -299,14 +290,27 @@ vfat_fuse_getattr(const char *path, struct stat *st)
 	return -ENOENT;
 }
 
+void seek_cluster(uint32_t cluster_no) {
+    if(cluster_no < 2) {
+	err(1, "cluster number < 2");
+    }
+
+    uint32_t firstDataSector = vfat_info.fat_boot.reserved_sectors +
+	(vfat_info.fat_boot.fat_count * vfat_info.fat_boot.fat32.sectors_per_fat);
+    uint32_t firstSectorofCluster = ((cluster_no - 2) * vfat_info.fat_boot.sectors_per_cluster) + firstDataSector;
+    if(lseek(vfat_info.fs, firstSectorofCluster * vfat_info.fat_boot.bytes_per_sector, SEEK_SET) == -1) {
+	err(1, "lseek cluster_no %d\n", cluster_no);
+    }
+}
+
 static int
 vfat_fuse_readdir(const char *path, void *buf,
 		  fuse_fill_dir_t filler, off_t offs, struct fuse_file_info *fi)
 {
-	/* XXX: This is example code, replace with your own implementation */
 	DEBUG_PRINT("fuse readdir %s\n", path);
 	//assert(offs == 0);
-	/* XXX add your code here */
+	seek_cluster(vfat_info.fat_boot.fat32.root_cluster);
+	vfat_readdir(filler, buf);
 	filler(buf, "a.txt", NULL, 0);
 	filler(buf, "b.txt", NULL, 0);
 	return 0;
@@ -323,7 +327,7 @@ vfat_fuse_read(const char *path, char *buf, size_t size, off_t offs,
 	buf[1] = 'Y';
 	/* XXX add your code here */
 	return 2; // number of bytes read from the file
-		  // must be size unless EOF reached, negative for an error 
+		  // must be size unless EOF reached, negative for an error
 }
 
 ////////////// No need to modify anything below this point

@@ -8,7 +8,7 @@ struct fat_boot_fat32 {
 	/*36*/	uint32_t	sectors_per_fat;//BPB_FATSz32
 	/*40*/	uint16_t	fat_flags;
 	/*42*/	uint16_t	version;
-	/*44*/	uint32_t	root_cluster;
+	/*44*/	uint32_t	root_cluster;//BPB_RootClus
 	/*48*/	uint16_t	fsinfo_sector;
 	/*50*/	uint16_t	backup_sector;
 	/*52*/	uint8_t		reserved2[12];
@@ -24,14 +24,14 @@ struct fat_boot_fat32 {
 struct fat_boot {
 	/* 0*/	uint8_t		jmp_boot[3];
 	/* 3*/	char		oemname[8];
-	/*11*/	uint16_t	bytes_per_sector;//BPB_BytsPerSec 
-	/*13*/	uint8_t		sectors_per_cluster;
-	/*14*/	uint16_t	reserved_sectors;
-	/*16*/	uint8_t		fat_count;
+	/*11*/	uint16_t	bytes_per_sector;//BPB_BytsPerSec
+	/*13*/	uint8_t		sectors_per_cluster;//BPB_SecPerClus
+	/*14*/	uint16_t	reserved_sectors;//BPB_RsvdSecCnt
+	/*16*/	uint8_t		fat_count;//BPB_NumFATs
 	/*17*/	uint16_t	root_max_entries; //BPB_RootEntCnt
 	/*19*/	uint16_t	total_sectors_small;//BPB_TotSec16
-	/*21*/	uint8_t		media_info;
-	/*22*/	uint16_t	sectors_per_fat_small;//BPB_FATSz16 
+	/*21*/	uint8_t		media_info;//BPB_Media
+	/*22*/	uint16_t	sectors_per_fat_small;//BPB_FATSz16
 	/*24*/	uint16_t	sectors_per_track;
 	/*26*/	uint16_t	head_count;
 	/*28*/	uint32_t	fs_offset;
@@ -61,9 +61,15 @@ struct fat32_direntry {
 	/*28*/	uint32_t	size;
 } __attribute__ ((__packed__));
 
-#define VFAT_ATTR_DIR	0x10
-#define VFAT_ATTR_LFN	0xf
-#define VFAT_ATTR_INVAL	(0x80|0x40|0x08)
+#define ATTR_READ_ONLY 0x01
+#define ATTR_HIDDEN 0x02
+#define ATTR_SYSTEM 0x04
+#define ATTR_VOLUME_ID 0x08
+#define ATTR_DIRECTORY 0x10
+#define ATTR_ARCHIVE 0x20
+#define VFAT_ATTR_LFN 0xf
+#define ATTR_LONG_NAME (ATTR_READONLY | ATTR_HIDDEN | ATTR_SYSTEM | ATTR_VOLUME_ID)
+#define VFAT_ATTR_INVAL (0x80|0x40|0x08)
 
 struct fat32_direntry_long {
 	/* 0*/	uint8_t		seq;
