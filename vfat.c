@@ -183,6 +183,7 @@ test_read(void) {
 	uint32_t fatSz, first_data_sec;
 	struct fat32_direntry short_entry;
 	struct fat32_direntry_long long_entry;
+	memset(buffer, 0, 260);
 
 	// No need to check for FAT32 anymore
         fatSz = vfat_info.fat_boot.fat32.sectors_per_fat;
@@ -198,7 +199,65 @@ test_read(void) {
 			err(1, "read(short_dir)");
 		}
 
-		
+		if((short_entry.attr & ATTR_LONG_NAME) == ATTR_LONG_NAME) {
+			long_entry = *((struct fat32_direntry_long *) &short_entry);
+			if((long_entry.seq & 0x40) == 0x40) {
+				seq_nb = (long_entry.seq & 0x0f) - 1;
+				check_sum = long_entry.csum;
+				
+				for(j = 0; j < 13; j++) {
+					if(j < 5 && long_entry.name1[j] != 0xFF) {
+						buffer[j] = long_entry.name1[j];
+					} else if(j < 11 && long_entry.name2[j - 5] != 0xFF) {
+						buffer[j] = long_entry.name2[j - 5];
+					} else if(j < 13 && long_entry.name3[j - 11] != 0xFF) {
+						buffer[j] = long_entry.name3[j - 11];
+					}
+				}
+			} else if (check_sum == long_entry.csum  && long_entry.seq == seq_nb) {
+				seq_nb -= 1;
+				
+				char tmp[260];
+				memset(tmp, 0, 260);
+				
+				for(j = 0; j < 260; j++) {
+					tmp[j] = buffer[j];
+				}
+				
+				memset(buffer, 0, 260);
+				
+				for(j = 0; j < 260; j++) {
+					if(j < 5 && long_entry.name1[j] != 0xFF) {
+						buffer[j] = long_entry.name1[j];
+					} else if(j < 11 && long_entry.name2[j - 5] != 0xFF) {
+						buffer[j] = long_entry.name2[j - 5];
+					} else if(j < 13 && long_entry.name3[j - 11] != 0xFF) {
+						buffer[j] = long_entry.name3[j - 11];
+					} else if(tmp[j - 13] != 0xFF){
+						buffer[j] = tmp[j - 13];
+					}
+				}
+			} else {
+				seq_nb = 0;
+				check_sum = '\0';
+				memset(buffer, 0, 260);
+				err(1, "error: Bad sequence number or checksum\n");
+			}
+		} else if(check_sum == chkSum(&(short_entry.nameext)) && seq_nb == 0) {
+			DEBUG_PRINT("%s\n", buffer);
+			check_sum = '\0';
+			memset(buffer, 0, 260);
+		} else {
+			if(short_entry.nameext[0] == 0xE5){
+				continue;
+			} else if(short_entry.nameext[0] == 0x00) {
+				break;
+			} else if(short_entry.nameext[0] == 0x05) {
+				short_entry.nameext[0] = 0xE5;
+			}
+			
+			///DEBUG_PRINT("short name: %s\n", short_entry.nameext);
+		}
 	}
 
 	return 0;
