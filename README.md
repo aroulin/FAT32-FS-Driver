@@ -18,7 +18,7 @@ Operating Systems Assignment 3
       directory and fill stat entries correctly (especially attribute S_IFREG and S_IFDIR). 
       Make sure you can read top-level files
 - [ ] Add multi-level directory resolution | traverse directory structure ("/dir1/dir2/file")
-- [ ] Add support for long names. You will need to keep some state before you finally
+- [x] Add support for long names. You will need to keep some state before you finally
       read the short entry holding the information about the file and you should check
       that long name entries are correct.
 - [ ] Fill other stat fields (atime/mtime/ctime)
