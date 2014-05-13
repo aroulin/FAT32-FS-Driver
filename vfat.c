@@ -156,6 +156,9 @@ vfat_init(const char *dev)
 	// and other fields of fat_boot_fat32 so we don't check them
 
 	printf("Volume seems really FAT32.\n");
+	if(lseek(vfat_info.fs, -512, SEEK_CUR) == -1) {
+		err(1, "lseek(-512)");
+	}
 }
 
 unsigned char
