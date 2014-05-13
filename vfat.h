@@ -88,3 +88,5 @@ struct fat32_direntry_long {
 
 #endif
 void seek_cluster(uint32_t cluster_no);
+static int read_cluster(uint32_t cluster_no, fuse_fill_dir_t filler, void *fillerdata);
+char* getfilename(char* nameext, char* filename);

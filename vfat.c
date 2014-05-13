@@ -191,27 +191,27 @@ chkSum (unsigned char *pFcbName) {
 
 
 static int
-test_read(void) {
+read_cluster(uint32_t cluster_no, fuse_fill_dir_t filler, void *fillerdata) {
 	uint8_t check_sum = '\0';
 	char buffer[260]; // Max size of name: 13 * 0x14 = 260
 	int i, j, seq_nb = 0, index_buffer = 0;
-	uint32_t fatSz, first_data_sec;
 	struct fat32_direntry short_entry;
 	struct fat32_direntry_long long_entry;
 	memset(buffer, 0, 260);
 
-	// No need to check for FAT32 anymore
-        fatSz = vfat_info.fat_boot.fat32.sectors_per_fat;
-
-	first_data_sec = vfat_info.fat_boot.reserved_sectors + fatSz * vfat_info.fat_boot.fat_count;
-
-	if(lseek(vfat_info.fs, first_data_sec*vfat_info.fat_boot.bytes_per_sector, SEEK_CUR) == -1) {
-		err(1, "lseek(%d)", first_data_sec*vfat_info.fat_boot.bytes_per_sector);
-	}
+	seek_cluster(cluster_no);
 
 	for(i = 0; i < vfat_info.fat_boot.sectors_per_cluster*vfat_info.fat_boot.bytes_per_sector; i+=32) {
 		if(read(vfat_info.fs, &short_entry, 32) != 32){
 			err(1, "read(short_dir)");
+		}
+		
+		if(((uint8_t) short_entry.nameext[0]) == 0xE5){
+			continue;
+		} else if(short_entry.nameext[0] == 0x00) {
+			break;
+		} else if(short_entry.nameext[0] == 0x05) {
+			short_entry.nameext[0] = (char) 0xE5;
 		}
 
 		if((short_entry.attr & ATTR_LONG_NAME) == ATTR_LONG_NAME) {
@@ -259,26 +259,21 @@ test_read(void) {
 				err(1, "error: Bad sequence number or checksum\n");
 			}
 		} else if(check_sum == chkSum(&(short_entry.nameext)) && seq_nb == 0) {
-			DEBUG_PRINT("%s\n", buffer);
+			filler(fillerdata, buffer, NULL, 0);
 			check_sum = '\0';
 			memset(buffer, 0, 260);
 		} else {
-			if(short_entry.nameext[0] == 0xE5){
-				continue;
-			} else if(short_entry.nameext[0] == 0x00) {
-				break;
-			} else if(short_entry.nameext[0] == 0x05) {
-				short_entry.nameext[0] = 0xE5;
-			}
-
-			///DEBUG_PRINT("short name: %s\n", short_entry.nameext);
+			char *filename = buffer;
+			getfilename(short_entry.nameext, filename);
+			filler(fillerdata, buffer, NULL, 0);
 		}
 	}
 
 	return 0;
 }
 
-char* getfilename(char* nameext, char* filename) {
+char*
+getfilename(char* nameext, char* filename) {
 	if(nameext[0] == 0x20) {
 	    err(1, "filename[0] is 0x20");
 	}
@@ -359,49 +354,10 @@ vfat_readdir(uint32_t cluster_no, fuse_fill_dir_t filler, void *fillerdata)
 	st.st_gid = mount_gid;
 	st.st_nlink = 1;
 
-	seek_cluster(cluster_no);
-
 	bool eof = false;
 	const uint32_t maxEntryCnt = vfat_info.fat_boot.bytes_per_sector * vfat_info.fat_boot.sectors_per_cluster;
-	struct fat32_direntry dir_entry;
 	while(!eof) {
-		for(uint32_t entryCnt = 0; entryCnt < maxEntryCnt; entryCnt += 32) {
-
-			if(read(vfat_info.fs, &dir_entry, 32) != 32) {
-				err(1, "Failed to read a dir entry");
-			}
-
-
-			if(dir_entry.nameext[0] == (char)0xE5) {
-			    continue;
-			}
-			else if((dir_entry.attr & ATTR_LONG_NAME) == ATTR_LONG_NAME) {
-				continue;
-			}
-			else if(dir_entry.nameext[0] == 0x00) {
-				eof = true;
-				break;
-			} else {
-				unsigned char prob = (unsigned char) dir_entry.nameext[0];
-				printf("%x\n", prob);
-			    if(dir_entry.nameext[0] == 0x05) {
-				dir_entry.nameext[0] = (char)0xE5;
-			    }
-
-				// Process file
-				char filename[13];
-				char* buffer = filename;
-				for(int i = 0; i < 11; i++) {
-				    printf("%c",  dir_entry.nameext[i]);
-				}
-				getfilename(dir_entry.nameext, buffer);
-				printf(" => %s\n", buffer);
-				fflush(stdout);
-				filler(fillerdata, filename, NULL, 0);
-
-			}
-
-		}
+		read_cluster(cluster_no, filler, fillerdata);
 		eof = true;
 		// goto next cluster
 	}
@@ -533,6 +489,5 @@ main(int argc, char **argv)
 		errx(1, "missing file system parameter");
 
 	vfat_init(vfat_info.dev);
-	test_read();
 	return (fuse_main(args.argc, args.argv, &vfat_available_ops, NULL));
 }
