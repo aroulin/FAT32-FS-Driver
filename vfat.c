@@ -14,6 +14,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
+#include <stdbool.h>
 
 #include "vfat.h"
 
@@ -34,6 +35,20 @@ uid_t mount_uid;
 gid_t mount_gid;
 time_t mount_time;
 
+
+void seek_cluster(uint32_t cluster_no) {
+    if(cluster_no < 2) {
+	err(1, "cluster number < 2");
+    }
+
+    uint32_t firstDataSector = vfat_info.fat_boot.reserved_sectors +
+	(vfat_info.fat_boot.fat_count * vfat_info.fat_boot.fat32.sectors_per_fat);
+    uint32_t firstSectorofCluster = ((cluster_no - 2) * vfat_info.fat_boot.sectors_per_cluster) + firstDataSector;
+    printf("%x\n", vfat_info.fat_boot.bytes_per_sector* firstSectorofCluster);
+    if(lseek(vfat_info.fs, firstSectorofCluster * vfat_info.fat_boot.bytes_per_sector, SEEK_SET) == -1) {
+	err(1, "lseek cluster_no %d\n", cluster_no);
+    }
+}
 
 static void
 vfat_init(const char *dev)
@@ -315,7 +330,7 @@ test_read(void) {
 			}
 
 			DEBUG_PRINT("Short name of file/dir: ");
-			for(j = 0; j < 5 && j != 0xFFFF; j++) {
+			for(j = 0; j < 11 && j != 0xFFFF; j++) {
 				DEBUG_PRINT("%c", short_entry.nameext[j]);
 			}
 			DEBUG_PRINT("\n");
@@ -326,8 +341,76 @@ test_read(void) {
 	return 0;
 }
 
+char* getfilename(char* nameext, char* filename) {
+	if(nameext[0] == 0x20) {
+	    err(1, "filename[0] is 0x20");
+	}
+
+	uint32_t fileNameCnt = 0;
+	bool before_extension = true;
+	bool in_spaces = false;
+	bool in_extension = false;
+
+	for(int i = 0; i < 11; i++) {
+		if(nameext[i] < 0x20 ||
+			nameext[i] == 0x22 ||
+			nameext[i] == 0x2A ||
+			nameext[i] == 0x2B ||
+			nameext[i] == 0x2C ||
+			nameext[i] == 0x2E ||
+			nameext[i] == 0x2F ||
+			nameext[i] == 0x3A ||
+			nameext[i] == 0x3B ||
+			nameext[i] == 0x3C ||
+			nameext[i] == 0x3D ||
+			nameext[i] == 0x3E ||
+			nameext[i] == 0x3F ||
+			nameext[i] == 0x5B ||
+			nameext[i] == 0x5C ||
+			nameext[i] == 0x5D ||
+			nameext[i] == 0x7C) {
+
+			err(1, "invalid character in filename %x at %d\n", nameext[i] & 0xFF, i);
+		}
+
+		if(before_extension) {
+		    if(nameext[i] == 0x20) {
+			before_extension = false;
+			in_spaces = true;
+			filename[fileNameCnt++] = '.';
+		    } else if(i == 8) {
+			before_extension = false;
+			in_spaces = true;
+			filename[fileNameCnt++] = '.';
+			filename[fileNameCnt++] = nameext[i];
+			in_extension = true;
+		    } else {
+			filename[fileNameCnt++] = nameext[i];
+		    }
+		} else if(in_spaces) {
+			if(nameext[i] != 0x20) {
+			    in_spaces = false;
+			    in_extension = true;
+			    filename[fileNameCnt++] = nameext[i];
+			}
+		} else if(in_extension) {
+			if(nameext[i] == 0x20) {
+			    break;
+			} else {
+			    filename[fileNameCnt++] = nameext[i];
+			}
+		}
+	}
+
+	if(filename[fileNameCnt - 1] == '.') {
+	    filename--;
+	}
+	filename[fileNameCnt] = '\0';
+	return filename;
+}
+
 static int
-vfat_readdir(fuse_fill_dir_t filler, void *fillerdata)
+vfat_readdir(uint32_t cluster_no, fuse_fill_dir_t filler, void *fillerdata)
 {
 	struct stat st; // we can reuse same stat entry over and over again
 	void *buf = NULL;
@@ -339,6 +422,52 @@ vfat_readdir(fuse_fill_dir_t filler, void *fillerdata)
 	st.st_gid = mount_gid;
 	st.st_nlink = 1;
 
+	seek_cluster(cluster_no);
+
+	bool eof = false;
+	const uint32_t maxEntryCnt = vfat_info.fat_boot.bytes_per_sector * vfat_info.fat_boot.sectors_per_cluster;
+	struct fat32_direntry dir_entry;
+	while(!eof) {
+		for(uint32_t entryCnt = 0; entryCnt < maxEntryCnt; entryCnt += 32) {
+
+			if(read(vfat_info.fs, &dir_entry, 32) != 32) {
+				err(1, "Failed to read a dir entry");
+			}
+
+
+			if(dir_entry.nameext[0] == (char)0xE5) {
+			    continue;
+			}
+			else if((dir_entry.attr & ATTR_LONG_NAME) == ATTR_LONG_NAME) {
+				continue;
+			}
+			else if(dir_entry.nameext[0] == 0x00) {
+				eof = true;
+				break;
+			} else {
+				unsigned char prob = (unsigned char) dir_entry.nameext[0];
+				printf("%x\n", prob);
+			    if(dir_entry.nameext[0] == 0x05) {
+				dir_entry.nameext[0] = (char)0xE5;
+			    }
+
+				// Process file
+				char filename[13];
+				char* buffer = filename;
+				for(int i = 0; i < 11; i++) {
+				    printf("%c",  dir_entry.nameext[i]);
+				}
+				getfilename(dir_entry.nameext, buffer);
+				printf(" => %s\n", buffer);
+				fflush(stdout);
+				filler(fillerdata, filename, NULL, 0);
+
+			}
+
+		}
+		eof = true;
+		// goto next cluster
+	}
 
 }
 
@@ -412,18 +541,6 @@ vfat_fuse_getattr(const char *path, struct stat *st)
 	return -ENOENT;
 }
 
-void seek_cluster(uint32_t cluster_no) {
-    if(cluster_no < 2) {
-	err(1, "cluster number < 2");
-    }
-
-    uint32_t firstDataSector = vfat_info.fat_boot.reserved_sectors +
-	(vfat_info.fat_boot.fat_count * vfat_info.fat_boot.fat32.sectors_per_fat);
-    uint32_t firstSectorofCluster = ((cluster_no - 2) * vfat_info.fat_boot.sectors_per_cluster) + firstDataSector;
-    if(lseek(vfat_info.fs, firstSectorofCluster * vfat_info.fat_boot.bytes_per_sector, SEEK_SET) == -1) {
-	err(1, "lseek cluster_no %d\n", cluster_no);
-    }
-}
 
 static int
 vfat_fuse_readdir(const char *path, void *buf,
@@ -431,8 +548,7 @@ vfat_fuse_readdir(const char *path, void *buf,
 {
 	DEBUG_PRINT("fuse readdir %s\n", path);
 	//assert(offs == 0);
-	seek_cluster(vfat_info.fat_boot.fat32.root_cluster);
-	vfat_readdir(filler, buf);
+	vfat_readdir(vfat_info.fat_boot.fat32.root_cluster, filler, buf);
 	filler(buf, "a.txt", NULL, 0);
 	filler(buf, "b.txt", NULL, 0);
 	return 0;
@@ -481,5 +597,5 @@ main(int argc, char **argv)
 
 	vfat_init(vfat_info.dev);
 	test_read();
-	return 0;//(fuse_main(args.argc, args.argv, &vfat_available_ops, NULL));
+	return (fuse_main(args.argc, args.argv, &vfat_available_ops, NULL));
 }
