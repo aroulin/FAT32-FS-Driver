@@ -89,29 +89,29 @@ vfat_init(const char *dev)
 /* XXX add your code here */
 
 unsigned char
-chkSum (unsigned char *pFcbName)
-	{
-		short fcbNameLen;
-		unsigned char sum;
+chkSum (unsigned char *pFcbName) {
+	short fcbNameLen;
+	unsigned char sum;
 
-		sum = 0;
-		for (fcbNameLen=11; fcbNameLen!=0; fcbNameLen--) {
-			// NOTE: The operation is an unsigned char rotate right
-			sum = ((sum & 1) ? 0x80 : 0) + (sum >> 1) + *pFcbName++;
-		}
-		return (sum);
+	sum = 0;
+	for (fcbNameLen=11; fcbNameLen!=0; fcbNameLen--) {
+		// NOTE: The operation is an unsigned char rotate right
+		sum = ((sum & 1) ? 0x80 : 0) + (sum >> 1) + *pFcbName++;
 	}
+	return (sum);
+}
 
 
 static int
 test_read(void) {
-	unsigned char check_sum = '\0';
+	uint8_t check_sum = '\0';
 	char buffer[260]; // Max size of name: 13 * 0x14 = 260
 	int i, j, seq_nb = 0, index_buffer = 0;
 	uint32_t fatSz, first_data_sec;
 	struct fat32_direntry short_entry;
 	struct fat32_direntry_long long_entry;
 
+	// No need to check for FAT32 anymore
         fatSz = vfat_info.fat_boot.fat32.sectors_per_fat;
 	
 	first_data_sec = vfat_info.fat_boot.reserved_sectors + fatSz * vfat_info.fat_boot.fat_count;
@@ -120,55 +120,36 @@ test_read(void) {
 		err(1, "lseek(%d)", first_data_sec*vfat_info.fat_boot.bytes_per_sector);
 	}
 	
+	// test
 	for(i = 0; i < vfat_info.fat_boot.sectors_per_cluster*vfat_info.fat_boot.bytes_per_sector; i+=32) {
 		if(read(vfat_info.fs, &short_entry, 32) != 32){
 			err(1, "read(short_dir)");
 		}
-		
 		// Long name
-		if((short_entry.attr & 0x0F) == 0x0F) {
+		if(short_entry.attr == 15) {
 			long_entry = *((struct fat32_direntry_long *) (&short_entry));
 			
 			// Last of the sequence of long names
-			if((long_entry.seq & 0xF0) == 0x40) {
-				// Check 1st byte of name
-				if(long_entry.name1[0] == 0xE5) {
-					continue;
-				} else if(long_entry.name1[0] == 0x00) {
-					break;
-				} else if(long_entry.name1[0] == 0x05) {
-					long_entry.name1[0] = 0xE5;
-				}
-				
+			if((long_entry.seq & 0x40) == 0x40) {
 				// Copy long name into buffer
-				for(j = 0; j < 5 && long_entry.name1[j] != 0xFF; j++) {
+				for(j = 0; j < 5 && long_entry.name1[j] != 0xff; j++) {
 					buffer[index_buffer] = long_entry.name1[j];
 					index_buffer += 1;
 				}
-				for(j = 0; j < 6 && long_entry.name2[j] != 0xFF; j++) {
+				for(j = 0; j < 6 && long_entry.name2[j] != 0xff; j++) {
 					buffer[index_buffer] = long_entry.name2[j];
 					index_buffer += 1;
 				}
-				for(j = 0; j < 3 && long_entry.name3[j] != 0xFF; j++) {
+				for(j = 0; j < 3 && long_entry.name3[j] != 0xff; j++) {
 					buffer[index_buffer] = long_entry.name3[j];
 					index_buffer += 1;
 				}
 				
-				seq_nb = long_entry.seq & 0x0F;
-				check_sum = long_entry.csum;
+				seq_nb = long_entry.seq & 0x0f - 1;
+				check_sum = (unsigned char) long_entry.csum;
 			}
 			// Middle of sequence of long names
-			else if(long_entry.csum == check_sum && seq_nb == (long_entry.seq + 1)) {
-				seq_nb -= 1;
-				// Check 1st byte of name
-				if(long_entry.name1[0] == 0xE5) {
-					continue;
-				} else if(long_entry.name1[0] == 0x00) {
-					break;
-				} else if(long_entry.name1[0] == 0x05) {
-					long_entry.name1[0] = 0xE5;
-				}
-				
+			else if(long_entry.csum == check_sum && seq_nb == long_entry.seq) {
 				// Add name in the first part of the buffer
 				char tmp[260];
 				for(j = 0; j < 260; j++) {
@@ -177,13 +158,13 @@ test_read(void) {
 				
 				// Copy long name into buffer
 				for(j = 0; j < 5; j++) {
-					if(j < 5 && long_entry.name1[j] != 0xFF) {
+					if(j < 5 && long_entry.name1[j] != 0xff) {
 						buffer[j] = long_entry.name1[j];
 						index_buffer += 1;
-					} else if(j < 11 && long_entry.name2[j - 5] != 0xFF) {
+					} else if(j < 11 && long_entry.name2[j - 5] != 0xff) {
 						buffer[j] = long_entry.name2[j - 5];
 						index_buffer += 1;
-					} else if(j < 14 && long_entry.name3[j - 11] != 0xFF) {
+					} else if(j < 14 && long_entry.name3[j - 11] != 0xff) {
 						buffer[j] = long_entry.name3[j - 11];
 						index_buffer += 1;
 					} else {
@@ -193,59 +174,38 @@ test_read(void) {
 			} 
 			// Error
 			else {
+				DEBUG_PRINT("Error reading name: %s%s%s\n", long_entry.name1, long_entry.name2, long_entry.name3);
+				DEBUG_PRINT("Seq_nb: %x, Check_sum: %d\n", long_entry.seq, long_entry.csum);
 				seq_nb = 0;
 				check_sum = '\0';
-				for(j = 0; j < 260; j++) {
-					buffer[j] = '\0';
-				}
+				memset(buffer, 0, 260);
 			}
-		} 
+		}
 		// Short name after a sequence of long names
-		else if(check_sum != '\0' && seq_nb == 0 && chkSum(&(short_entry.nameext)) == check_sum) {
-			// Check 1st byte of name
-			if(short_entry.nameext[0] == 0xE5) {
-				continue;
-			} else if(short_entry.nameext[0] == 0x00) {
-				break;
-			} else if(short_entry.nameext[0] == 0x05) {
-				short_entry.nameext[0] = 0xE5;
-			}
-			
-			DEBUG_PRINT("Long name of file/dir: ");
-			for(j = 0; j < 260 && j != '\0'; j++) {
-				DEBUG_PRINT("%c", buffer[j]);
-			}
-			DEBUG_PRINT("\n");
+		else if(seq_nb == 0 && ((uint8_t) chkSum(&(short_entry.nameext))) == check_sum) {
+			DEBUG_PRINT("Long name of file/dir: %s\n", buffer);
 			// Do stuff...
 			
 			// Init buffer, check_sum. No need for seq_nb since it is already 0
-			for(j = 0; j < 260; j++) {
-				buffer[j] = '\0';
-			}
+			memset(buffer, 0, 260);
 			check_sum = '\0';
 		}
 		// Short name in the middle of a sequence of long names or placed alone (normally)
 		else {
 			// Init buffer, check_sum, seq_nb
-			for(j = 0; j < 260; j++) {
-				buffer[j] = '\0';
-			}
+			memset(buffer, 0, 260);
 			check_sum = '\0';
 			
 			// Check 1st byte of name
-			if(short_entry.nameext[0] == 0xE5) {
+			if(short_entry.nameext[0] == 0xe5) {
 				continue;
 			} else if(short_entry.nameext[0] == 0x00) {
 				break;
 			} else if(short_entry.nameext[0] == 0x05) {
-				short_entry.nameext[0] = 0xE5;
+				short_entry.nameext[0] = 0xe5;
 			}
 					
-			DEBUG_PRINT("Short name of file/dir: ");
-			for(j = 0; j < 5 && j != 0xFFFF; j++) {
-				DEBUG_PRINT("%c", short_entry.nameext[j]);
-			}
-			DEBUG_PRINT("\n");
+			DEBUG_PRINT("Short name of file/dir: %s\n", short_entry.nameext);
 			// Do stuff...
 		}
 	}
