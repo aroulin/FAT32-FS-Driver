@@ -109,7 +109,7 @@ vfat_init(const char *dev)
 
 	// Check all other fields
 	if(((char*)&vfat_info.fat_boot)[510] != 0x55 &&
-		((char*)&vfat_info.fat_boot)[511] != 0xAA) {
+		((char*)&vfat_info.fat_boot)[511] != (char) 0xAA) {
 		err(1, "Magic number 0xAA55 not present\n");
 	}
 
@@ -223,11 +223,11 @@ read_cluster(uint32_t cluster_no, fuse_fill_dir_t filler, void *fillerdata) {
 				check_sum = long_entry.csum;
 
 				for(j = 0; j < 13; j++) {
-					if(j < 5 && long_entry.name1[j] != 0xFF) {
+					if(j < 5 && long_entry.name1[j] != 0xFFFF) {
 						buffer[j] = long_entry.name1[j];
-					} else if(j < 11 && long_entry.name2[j - 5] != 0xFF) {
+					} else if(j < 11 && long_entry.name2[j - 5] != 0xFFFF) {
 						buffer[j] = long_entry.name2[j - 5];
-					} else if(j < 13 && long_entry.name3[j - 11] != 0xFF) {
+					} else if(j < 13 && long_entry.name3[j - 11] != 0xFFFF) {
 						buffer[j] = long_entry.name3[j - 11];
 					}
 				}
@@ -244,13 +244,13 @@ read_cluster(uint32_t cluster_no, fuse_fill_dir_t filler, void *fillerdata) {
 				memset(buffer, 0, 260);
 
 				for(j = 0; j < 260; j++) {
-					if(j < 5 && long_entry.name1[j] != 0xFF) {
+					if(j < 5 && long_entry.name1[j] != 0xFFFF) {
 						buffer[j] = long_entry.name1[j];
-					} else if(j < 11 && long_entry.name2[j - 5] != 0xFF) {
+					} else if(j < 11 && long_entry.name2[j - 5] != 0xFFFF) {
 						buffer[j] = long_entry.name2[j - 5];
-					} else if(j < 13 && long_entry.name3[j - 11] != 0xFF) {
+					} else if(j < 13 && long_entry.name3[j - 11] != 0xFFFF) {
 						buffer[j] = long_entry.name3[j - 11];
-					} else if(tmp[j - 13] != 0xFF){
+					} else if(tmp[j - 13] != (char) 0xFF){
 						buffer[j] = tmp[j - 13];
 					}
 				}
@@ -261,17 +261,48 @@ read_cluster(uint32_t cluster_no, fuse_fill_dir_t filler, void *fillerdata) {
 				err(1, "error: Bad sequence number or checksum\n");
 			}
 		} else if(check_sum == chkSum(&(short_entry.nameext)) && seq_nb == 0) {
-			filler(fillerdata, buffer, NULL, 0);
+			char *filename = buffer;
+			setStat(short_entry,filename,filler,fillerdata);
 			check_sum = '\0';
 			memset(buffer, 0, 260);
 		} else {
 			char *filename = buffer;
 			getfilename(short_entry.nameext, filename);
-			filler(fillerdata, buffer, NULL, 0);
+			setStat(short_entry,filename,filler,fillerdata);
 		}
 	}
 
 	return DIRECTORY_NOT_FINISHED;
+}
+
+void 
+setStat(struct fat32_direntry dir_entry, char* buffer, fuse_fill_dir_t filler, void *fillerdata){
+	struct stat* stat_str = malloc(sizeof(struct stat));
+			stat_str->st_dev = 0; // Ignored by FUSE
+			stat_str->st_ino = 0; // Ignored by FUSE unless overridden
+			if(dir_entry.attr & ATTR_READ_ONLY){
+				stat_str->st_mode = S_IRUSR | S_IRGRP | S_IROTH;
+			}
+			else{
+				stat_str->st_mode = S_IRWXU | S_IRWXG | S_IRWXO;
+			}
+			if(dir_entry.attr & ATTR_DIRECTORY){
+				stat_str->st_mode |= S_IFDIR;
+			}
+			else{
+				stat_str->st_mode |= S_IFREG;
+			}
+			stat_str->st_nlink = 1;
+			stat_str->st_uid = mount_uid;
+			stat_str->st_gid = mount_gid;
+			stat_str->st_rdev = 0;
+			stat_str->st_size = dir_entry.size;
+			stat_str->st_blksize = 0; // Ignored by FUSE
+			stat_str->st_blocks = 1;
+			stat_str->st_atime = dir_entry.atime_date;
+			stat_str->st_mtime = dir_entry.mtime_time;
+			stat_str->st_ctime = 0;
+			filler(fillerdata, buffer, stat_str, 0);
 }
 
 char*
@@ -373,7 +404,6 @@ vfat_readdir(uint32_t cluster_no, fuse_fill_dir_t filler, void *fillerdata)
 			}
 		}
 	}
-
 }
 
 uint32_t
