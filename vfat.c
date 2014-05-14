@@ -46,7 +46,6 @@ void seek_cluster(uint32_t cluster_no) {
     uint32_t firstDataSector = vfat_info.fat_boot.reserved_sectors +
 	(vfat_info.fat_boot.fat_count * vfat_info.fat_boot.fat32.sectors_per_fat);
     uint32_t firstSectorofCluster = ((cluster_no - 2) * vfat_info.fat_boot.sectors_per_cluster) + firstDataSector;
-    printf("%x\n", vfat_info.fat_boot.bytes_per_sector* firstSectorofCluster);
     if(lseek(vfat_info.fs, firstSectorofCluster * vfat_info.fat_boot.bytes_per_sector, SEEK_SET) == -1) {
 	err(1, "lseek cluster_no %d\n", cluster_no);
     }
@@ -287,7 +286,7 @@ setStat(struct fat32_direntry dir_entry, char* buffer, fuse_fill_dir_t filler, v
 				stat_str->st_mode = S_IRWXU | S_IRWXG | S_IRWXO;
 			}
 			if(dir_entry.attr & ATTR_DIRECTORY){
-				stat_str->st_mode |= S_IFDIR;
+				stat_str->st_mode |= S_IFDIR;
 			}
 			else{
 				stat_str->st_mode |= S_IFREG;
@@ -381,22 +380,23 @@ vfat_readdir(uint32_t cluster_no, fuse_fill_dir_t filler, void *fillerdata)
 	void *buf = NULL;
 	struct vfat_direntry *e;
 	char *name;
+	uint32_t next_cluster_no;
+	bool eof = false;
+	int end_of_read;
+	const uint32_t maxEntryCnt = vfat_info.fat_boot.bytes_per_sector * vfat_info.fat_boot.sectors_per_cluster;
 
 	memset(&st, 0, sizeof(st));
 	st.st_uid = mount_uid;
 	st.st_gid = mount_gid;
 	st.st_nlink = 1;
 
-	bool eof = false;
-	int end_of_read;
-	const uint32_t maxEntryCnt = vfat_info.fat_boot.bytes_per_sector * vfat_info.fat_boot.sectors_per_cluster;
 	while(!eof) {
 		end_of_read = read_cluster(cluster_no, filler, fillerdata);
 		
 		if(end_of_read == END_OF_DIRECTORY) {
 			eof = true;
 		} else {
-			uint32_t next_cluster_no = next_cluster(cluster_no);
+			next_cluster_no = next_cluster(cluster_no);
 			if(next_cluster_no == 0xFFFFFFFF) {
 				eof = true;
 			} else {
@@ -462,8 +462,16 @@ static int
 vfat_resolve(const char *path, struct stat *st)
 {
 	struct vfat_search_data sd;
-
-	/* XXX add your code here */
+	sd.name = path;
+	sd.st = st;
+	DEBUG_PRINT("Searching for path %s\n", path);
+	vfat_readdir(2, vfat_search_entry, &sd);
+	
+	if(sd.found) {
+		return 0;
+	} else {
+		return -ENOENT;
+	}
 }
 
 // Get file attributes
@@ -473,34 +481,11 @@ vfat_fuse_getattr(const char *path, struct stat *st)
 	/* XXX: This is example code, replace with your own implementation */
 	DEBUG_PRINT("fuse getattr %s\n", path);
 	// No such file
-	if (strcmp(path, "/")==0) {
-		st->st_dev = 0; // Ignored by FUSE
-		st->st_ino = 0; // Ignored by FUSE unless overridden
-		st->st_mode = S_IRWXU | S_IRWXG | S_IRWXO | S_IFDIR;
-		st->st_nlink = 1;
-		st->st_uid = mount_uid;
-		st->st_gid = mount_gid;
-		st->st_rdev = 0;
-		st->st_size = 0;
-		st->st_blksize = 0; // Ignored by FUSE
-		st->st_blocks = 1;
+	if(vfat_resolve(path + 1, st) != 0) {
+		return -ENOENT;
+	} else {
 		return 0;
 	}
-	if (strcmp(path, "/a.txt")==0 || strcmp(path, "/b.txt")==0) {
-		st->st_dev = 0; // Ignored by FUSE
-		st->st_ino = 0; // Ignored by FUSE unless overridden
-		st->st_mode = S_IRWXU | S_IRWXG | S_IRWXO | S_IFREG;
-		st->st_nlink = 1;
-		st->st_uid = mount_uid;
-		st->st_gid = mount_gid;
-		st->st_rdev = 0;
-		st->st_size = 10;
-		st->st_blksize = 0; // Ignored by FUSE
-		st->st_blocks = 1;
-		return 0;
-	}
-
-	return -ENOENT;
 }
 
 
