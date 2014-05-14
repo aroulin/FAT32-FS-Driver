@@ -42,7 +42,7 @@ void seek_cluster(uint32_t cluster_no) {
     if(cluster_no < 2) {
 	err(1, "cluster number < 2");
     }
-    
+
     uint32_t firstDataSector = vfat_info.fat_boot.reserved_sectors +
 	(vfat_info.fat_boot.fat_count * vfat_info.fat_boot.fat32.sectors_per_fat);
     uint32_t firstSectorofCluster = ((cluster_no - 2) * vfat_info.fat_boot.sectors_per_cluster) + firstDataSector;
@@ -206,7 +206,7 @@ read_cluster(uint32_t cluster_no, fuse_fill_dir_t filler, void *fillerdata) {
 		if(read(vfat_info.fs, &short_entry, 32) != 32){
 			err(1, "read(short_dir)");
 		}
-		
+
 		if(((uint8_t) short_entry.nameext[0]) == 0xE5){
 			continue;
 		} else if(short_entry.nameext[0] == 0x00) {
@@ -261,20 +261,20 @@ read_cluster(uint32_t cluster_no, fuse_fill_dir_t filler, void *fillerdata) {
 			}
 		} else if(check_sum == chkSum(&(short_entry.nameext)) && seq_nb == 0) {
 			char *filename = buffer;
-			setStat(short_entry,filename,filler,fillerdata, cluster_no);
+			setStat(short_entry,filename,filler,fillerdata, (((uint32_t)short_entry.cluster_hi) << 16) | ((uint32_t)short_entry.cluster_lo));
 			check_sum = '\0';
 			memset(buffer, 0, 260);
 		} else {
 			char *filename = buffer;
 			getfilename(short_entry.nameext, filename);
-			setStat(short_entry,filename,filler,fillerdata, cluster_no);
+			setStat(short_entry,filename,filler,fillerdata, (((uint32_t)short_entry.cluster_hi) << 16) | ((uint32_t)short_entry.cluster_lo));
 		}
 	}
 
 	return DIRECTORY_NOT_FINISHED;
 }
 
-void 
+void
 setStat(struct fat32_direntry dir_entry, char* buffer, fuse_fill_dir_t filler, void *fillerdata, uint32_t cluster_no){
 	struct stat* stat_str = malloc(sizeof(struct stat));
 			stat_str->st_dev = 0; // Ignored by FUSE
@@ -392,7 +392,7 @@ vfat_readdir(uint32_t cluster_no, fuse_fill_dir_t filler, void *fillerdata)
 
 	while(!eof) {
 		end_of_read = read_cluster(cluster_no, filler, fillerdata);
-		
+
 		if(end_of_read == END_OF_DIRECTORY) {
 			eof = true;
 		} else {
@@ -414,23 +414,23 @@ next_cluster(uint32_t cluster_no) {
 	if(lseek(vfat_info.fs, first_fat + cluster_no * sizeof(uint32_t), SEEK_SET) == -1) {
 		err(1, "lseek(%d)", first_fat + cluster_no * sizeof(uint32_t));
 	}
-	
+
 	if(read(vfat_info.fs, &next_cluster, sizeof(uint32_t)) != sizeof(uint32_t)) {
 		err(1, "read(%d)",sizeof(uint32_t));
 	}
-	
+
 	if(lseek(vfat_info.fs, first_fat + vfat_info.fat_boot.fat32.sectors_per_fat * vfat_info.fat_boot.bytes_per_sector , SEEK_SET) == -1) {
 		err(1, "lseek(%d)", first_fat);
 	}
-	
+
 	if(read(vfat_info.fs, &next_cluster_check, sizeof(uint32_t)) != sizeof(uint32_t)) {
 		err(1, "read(%d)", sizeof(uint32_t));
 	}
-	
+
 	if(next_cluster_check == next_cluster) {
 		return next_cluster;
 	}
-	
+
 	err(1, "FAT is corrupted !");
 }
 
@@ -466,14 +466,15 @@ vfat_resolve(const char *path, struct stat *st)
 	char* final_name;
 	sd.name = path;
 	sd.st = st;
-	
+
 	for(i = strlen(path); path[i] != '/'; i--);
 	final_name = path + i + 1;
 	i = 0;
-	
+	for(; path[i] != '/'; i++);
+
 	DEBUG_PRINT("Searching for path %s\n", path);
 	vfat_readdir(2, vfat_search_entry, &sd);
-	
+
 	if(sd.found == 1) {
 		while(strcmp(sd.name, final_name) != 0) {
 			for(; path[i] != '/'; i++);
@@ -523,9 +524,14 @@ vfat_fuse_readdir(const char *path, void *buf,
 {
 	DEBUG_PRINT("fuse readdir %s\n", path);
 	//assert(offs == 0);
-	vfat_readdir(vfat_info.fat_boot.fat32.root_cluster, filler, buf);
-	filler(buf, "a.txt", NULL, 0);
-	filler(buf, "b.txt", NULL, 0);
+
+	struct stat st;
+	if(strcmp(path, "/") != 0) {
+		vfat_resolve(path+1, &st);
+		vfat_readdir((uint32_t)st.st_ino, filler, buf);
+	} else {
+	    vfat_readdir(2, filler, buf);
+	}
 	return 0;
 }
 
