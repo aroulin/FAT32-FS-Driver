@@ -261,13 +261,13 @@ read_cluster(uint32_t cluster_no, fuse_fill_dir_t filler, void *fillerdata) {
 			}
 		} else if(check_sum == chkSum(&(short_entry.nameext)) && seq_nb == 0) {
 			char *filename = buffer;
-			setStat(short_entry,filename,filler,fillerdata);
+			setStat(short_entry,filename,filler,fillerdata, cluster_no);
 			check_sum = '\0';
 			memset(buffer, 0, 260);
 		} else {
 			char *filename = buffer;
 			getfilename(short_entry.nameext, filename);
-			setStat(short_entry,filename,filler,fillerdata);
+			setStat(short_entry,filename,filler,fillerdata, cluster_no);
 		}
 	}
 
@@ -275,20 +275,20 @@ read_cluster(uint32_t cluster_no, fuse_fill_dir_t filler, void *fillerdata) {
 }
 
 void 
-setStat(struct fat32_direntry dir_entry, char* buffer, fuse_fill_dir_t filler, void *fillerdata){
+setStat(struct fat32_direntry dir_entry, char* buffer, fuse_fill_dir_t filler, void *fillerdata, uint32_t cluster_no){
 	struct stat* stat_str = malloc(sizeof(struct stat));
 			stat_str->st_dev = 0; // Ignored by FUSE
-			stat_str->st_ino = 0; // Ignored by FUSE unless overridden
+			stat_str->st_ino = cluster_no; // Ignored by FUSE unless overridden
 			if(dir_entry.attr & ATTR_READ_ONLY){
 				stat_str->st_mode = S_IRUSR | S_IRGRP | S_IROTH;
 			}
 			else{
 				stat_str->st_mode = S_IRWXU | S_IRWXG | S_IRWXO;
 			}
-			if(dir_entry.attr & ATTR_DIRECTORY){
+			if(dir_entry.attr & ATTR_DIRECTORY) {
 				stat_str->st_mode |= S_IFDIR;
 			}
-			else{
+			else {
 				stat_str->st_mode |= S_IFREG;
 			}
 			stat_str->st_nlink = 1;
@@ -462,12 +462,27 @@ static int
 vfat_resolve(const char *path, struct stat *st)
 {
 	struct vfat_search_data sd;
+	int i;
+	char* final_name;
 	sd.name = path;
 	sd.st = st;
+	
+	for(i = strlen(path); path[i] != '/'; i--);
+	final_name = path + i + 1;
+	i = 0;
+	
 	DEBUG_PRINT("Searching for path %s\n", path);
 	vfat_readdir(2, vfat_search_entry, &sd);
 	
-	if(sd.found) {
+	if(sd.found == 1) {
+		while(strcmp(sd.name, final_name) != 0) {
+			for(; path[i] != '/'; i++);
+			sd.name = path + i + 1;
+			vfat_readdir(((uint32_t) (sd.st)->st_ino), vfat_search_entry, &sd);
+			if(sd.found != 1) {
+				return -ENOENT;
+			}
+		}
 		return 0;
 	} else {
 		return -ENOENT;
@@ -481,6 +496,19 @@ vfat_fuse_getattr(const char *path, struct stat *st)
 	/* XXX: This is example code, replace with your own implementation */
 	DEBUG_PRINT("fuse getattr %s\n", path);
 	// No such file
+	if (strcmp(path, "/") == 0) {
+		st->st_dev = 0; // Ignored by FUSE
+		st->st_ino = 0; // Ignored by FUSE unless overridden
+		st->st_mode = S_IRWXU | S_IRWXG | S_IRWXO | S_IFDIR;
+		st->st_nlink = 1;
+		st->st_uid = mount_uid;
+		st->st_gid = mount_gid;
+		st->st_rdev = 0;
+		st->st_size = 0;
+		st->st_blksize = 0; // Ignored by FUSE
+		st->st_blocks = 1;
+		return 0;
+	}
 	if(vfat_resolve(path + 1, st) != 0) {
 		return -ENOENT;
 	} else {
