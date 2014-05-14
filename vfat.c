@@ -192,7 +192,7 @@ chkSum (unsigned char *pFcbName) {
 
 
 static int
-read_cluster(uint32_t cluster_no, fuse_fill_dir_t filler, void *fillerdata) {
+read_cluster(uint32_t cluster_no, fuse_fill_dir_t filler, void *fillerdata,bool first_cluster) {
 	uint8_t check_sum = '\0';
 	char buffer[260]; // Max size of name: 13 * 0x14 = 260
 	int i, j, seq_nb = 0, index_buffer = 0;
@@ -205,6 +205,13 @@ read_cluster(uint32_t cluster_no, fuse_fill_dir_t filler, void *fillerdata) {
 	for(i = 0; i < vfat_info.fat_boot.sectors_per_cluster*vfat_info.fat_boot.bytes_per_sector; i+=32) {
 		if(read(vfat_info.fs, &short_entry, 32) != 32){
 			err(1, "read(short_dir)");
+		}
+
+		if(i< 64 && first_cluster && cluster_no != 2){
+			char* filename = (i == 0) ? "." : "..";
+			setStat(short_entry,filename,filler,fillerdata, (((uint32_t)short_entry.cluster_hi) << 16) | ((uint32_t)short_entry.cluster_lo));
+	
+			continue;
 		}
 
 		if(((uint8_t) short_entry.nameext[0]) == 0xE5){
@@ -378,9 +385,8 @@ vfat_readdir(uint32_t cluster_no, fuse_fill_dir_t filler, void *fillerdata)
 {
 	struct stat st; // we can reuse same stat entry over and over again
 	void *buf = NULL;
-	struct vfat_direntry *e;
 	char *name;
-	uint32_t next_cluster_no;
+	uint32_t next_cluster_no = cluster_no;
 	bool eof = false;
 	int end_of_read;
 	const uint32_t maxEntryCnt = vfat_info.fat_boot.bytes_per_sector * vfat_info.fat_boot.sectors_per_cluster;
@@ -389,18 +395,17 @@ vfat_readdir(uint32_t cluster_no, fuse_fill_dir_t filler, void *fillerdata)
 	st.st_uid = mount_uid;
 	st.st_gid = mount_gid;
 	st.st_nlink = 1;
-
+	bool first_cluster = true;
 	while(!eof) {
-		end_of_read = read_cluster(cluster_no, filler, fillerdata);
+		end_of_read = read_cluster(next_cluster_no, filler, fillerdata,first_cluster);
+		first_cluster = false;
 
 		if(end_of_read == END_OF_DIRECTORY) {
 			eof = true;
 		} else {
-			next_cluster_no = next_cluster(cluster_no);
+			next_cluster_no = next_cluster(next_cluster_no);
 			if(next_cluster_no == 0xFFFFFFFF) {
 				eof = true;
-			} else {
-				vfat_readdir(next_cluster_no, filler, fillerdata);
 			}
 		}
 	}
@@ -419,7 +424,7 @@ next_cluster(uint32_t cluster_no) {
 		err(1, "read(%d)",sizeof(uint32_t));
 	}
 
-	if(lseek(vfat_info.fs, first_fat + vfat_info.fat_boot.fat32.sectors_per_fat * vfat_info.fat_boot.bytes_per_sector , SEEK_SET) == -1) {
+	if(lseek(vfat_info.fs, first_fat + vfat_info.fat_boot.fat32.sectors_per_fat * vfat_info.fat_boot.bytes_per_sector + cluster_no*sizeof(uint32_t) , SEEK_SET) == -1) {
 		err(1, "lseek(%d)", first_fat);
 	}
 
@@ -463,14 +468,22 @@ vfat_resolve(const char *path, struct stat *st)
 {
 	struct vfat_search_data sd;
 	int i;
+	int j;
 	char* final_name;
-	sd.name = path;
+	
 	sd.st = st;
 
 	for(i = strlen(path); path[i] != '/'; i--);
 	final_name = path + i + 1;
 	i = 0;
 	for(; path[i] != '/'; i++);
+
+	char file_to_search[i];
+	for(j=0; j<i;j++){
+		file_to_search[j] = path[j];
+	}
+	file_to_search[j] = '\0';
+	sd.name = file_to_search;
 
 	DEBUG_PRINT("Searching for path %s\n", path);
 	vfat_readdir(2, vfat_search_entry, &sd);
