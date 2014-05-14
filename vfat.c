@@ -210,7 +210,7 @@ read_cluster(uint32_t cluster_no, fuse_fill_dir_t filler, void *fillerdata,bool 
 		if(i< 64 && first_cluster && cluster_no != 2){
 			char* filename = (i == 0) ? "." : "..";
 			setStat(short_entry,filename,filler,fillerdata, (((uint32_t)short_entry.cluster_hi) << 16) | ((uint32_t)short_entry.cluster_lo));
-	
+
 			continue;
 		}
 
@@ -470,7 +470,7 @@ vfat_resolve(const char *path, struct stat *st)
 	int i;
 	int j;
 	char* final_name;
-	
+
 	sd.st = st;
 
 	for(i = strlen(path); path[i] != '/'; i--);
@@ -552,13 +552,74 @@ static int
 vfat_fuse_read(const char *path, char *buf, size_t size, off_t offs,
 	       struct fuse_file_info *fi)
 {
-	/* XXX: This is example code, replace with your own implementation */
 	DEBUG_PRINT("fuse read %s\n", path);
 	assert(size > 1);
-	buf[0] = 'X';
-	buf[1] = 'Y';
-	/* XXX add your code here */
-	return 2; // number of bytes read from the file
+
+	struct stat st;
+	vfat_resolve(path+1, &st);
+	if(!(st.st_mode & S_IFREG)) {
+		DEBUG_PRINT("Trying to read a directory or not regular file\n");
+		return -1;
+	}
+
+	size_t cnt = 0;
+	size_t cluster_size = vfat_info.fat_boot.sectors_per_cluster*vfat_info.fat_boot.bytes_per_sector;
+	uint32_t cluster_no = (uint32_t) st.st_ino;
+
+	if(offs >= st.st_size) {
+	    memset(buf, 0, size);
+	    return 0;
+	}
+
+	while(offs > cluster_size) {
+	    cluster_no = next_cluster(cluster_no);
+	    offs -= cluster_size;
+	}
+
+	seek_cluster(cluster_no);
+	if(lseek(vfat_info.fs, offs, SEEK_CUR) == -1) {
+	    err(1, "seek last part of offset failed\n");
+	}
+
+	if(cluster_size - offs > size) {
+		if(read(vfat_info.fs, buf+cnt, size) != size) {
+			err(1, "read cluster-offs > size failed\n");
+		}
+		return 0;
+	} else {
+		if(read(vfat_info.fs, buf+cnt, cluster_size - offs) != cluster_size-offs) {
+			err(1, "read cluster-offs <= size failed\n");
+		}
+		cnt += cluster_size - offs;
+	}
+
+	while(size - cnt > cluster_size) {
+		cluster_no = next_cluster(cluster_no);
+		seek_cluster(cluster_no);
+		if(cluster_no == -1) {
+		    memset(buf+cnt, 0, size-cnt);
+		}
+		if(read(vfat_info.fs, buf+cnt, cluster_size) != cluster_size) {
+			err(1, "read cluster_size failed\n");
+		}
+		cnt += cluster_size;
+	}
+
+	cluster_no = next_cluster(cluster_no);
+	seek_cluster(cluster_no);
+	if(cluster_no == -1) {
+	    memset(buf+cnt, 0, size-cnt);
+	}
+
+	if(cnt < size) {
+		if(read(vfat_info.fs, buf+cnt, size - cnt) != size - cnt) {
+			err(1, "read cluster_size failed\n");
+		}
+		cnt += size-cnt;
+	}
+
+
+	return cnt; // number of bytes read from the file
 		  // must be size unless EOF reached, negative for an error
 }
 
