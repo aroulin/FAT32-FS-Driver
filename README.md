@@ -22,3 +22,10 @@ Operating Systems Assignment 3
       read the short entry holding the information about the file and you should check
       that long name entries are correct.
 - [ ] Fill other stat fields (atime/mtime/ctime)
+
+More tasks...
+
+- [ ] Handle better subdirectories
+- [ ] find what's wrong about uids
+- [ ] get atime, ctime ... correct
+- [ ] see if -1 as end of cluster works
