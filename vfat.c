@@ -4,11 +4,7 @@
 
 #include <sys/mman.h>
 #include <assert.h>
-#ifdef __APPLE__
-#include <machine/endian.h>
-#else
 #include <endian.h>
-#endif
 #include <err.h>
 #include <errno.h>
 #include <fcntl.h>
@@ -200,13 +196,13 @@ chkSum (unsigned char *pFcbName) {
 static int
 read_cluster(uint32_t cluster_no, fuse_fill_dir_t filler, void *fillerdata,bool first_cluster) {
 	uint8_t check_sum = '\0';
-	uint16_t* buffer = calloc(MAX_NAME_SIZE, sizeof(uint16_t)); // Max size of name: 13 * 0x14 = 260
+	char* buffer = calloc(MAX_NAME_SIZE*2, sizeof(char)); // Max size of name: 13 * 0x14 = 260
 	char* char_buffer = calloc(MAX_NAME_SIZE, sizeof(char));
 	int i, j, seq_nb = 0;
 	size_t in_byte_size = 2 * MAX_NAME_SIZE, out_byte_size = MAX_NAME_SIZE;
 	struct fat32_direntry short_entry;
 	struct fat32_direntry_long long_entry;
-	memset(buffer, 0, MAX_NAME_SIZE);
+	memset(buffer, 0, 2*MAX_NAME_SIZE);
 
 	seek_cluster(cluster_no);
 
@@ -241,44 +237,55 @@ read_cluster(uint32_t cluster_no, fuse_fill_dir_t filler, void *fillerdata,bool 
 
 				for(j = 0; j < 13; j++) {
 					if(j < 5 && long_entry.name1[j] != 0xFFFF) {
-						buffer[j] = long_entry.name1[j];
+						buffer[j*2] = long_entry.name1[j];
+						buffer[j*2+1] = long_entry.name1[j] >> 8;
 					} else if(j < 11 && long_entry.name2[j - 5] != 0xFFFF) {
-						buffer[j] = long_entry.name2[j - 5];
+						buffer[j*2] = long_entry.name2[j-5];
+						buffer[j*2+1] = long_entry.name2[j-5] >> 8;
 					} else if(j < 13 && long_entry.name3[j - 11] != 0xFFFF) {
-						buffer[j] = long_entry.name3[j - 11];
+						buffer[j*2] = long_entry.name3[j-11];
+						buffer[j*2+1] = long_entry.name3[j-11] >> 8;
 					}
 				}
 			} else if (check_sum == long_entry.csum  && long_entry.seq == seq_nb) {
 				seq_nb -= 1;
 
-				uint16_t tmp[MAX_NAME_SIZE];
-				memset(tmp, 0, MAX_NAME_SIZE);
+				char tmp[MAX_NAME_SIZE*2];
+				memset(tmp, 0, MAX_NAME_SIZE*2);
 
-				for(j = 0; j < MAX_NAME_SIZE; j++) {
+				for(j = 0; j < MAX_NAME_SIZE*2; j++) {
 					tmp[j] = buffer[j];
 				}
 
-				memset(buffer, 0, MAX_NAME_SIZE);
+				memset(buffer, 0, MAX_NAME_SIZE*2);
 
 				for(j = 0; j < MAX_NAME_SIZE; j++) {
 					if(j < 5 && long_entry.name1[j] != 0xFFFF) {
-						buffer[j] = long_entry.name1[j];
+						buffer[j*2] = long_entry.name1[j];
+						buffer[j*2+1] = long_entry.name1[j] >> 8;
 					} else if(j < 11 && long_entry.name2[j - 5] != 0xFFFF) {
-						buffer[j] = long_entry.name2[j - 5];
+						buffer[j*2] = long_entry.name2[j-5];
+						buffer[j*2+1] = long_entry.name2[j-5] >> 8;
 					} else if(j < 13 && long_entry.name3[j - 11] != 0xFFFF) {
-						buffer[j] = long_entry.name3[j - 11];
-					} else if(j >= 13 && tmp[j - 13] != 0xFFFF){
-						buffer[j] = tmp[j - 13];
+						buffer[j*2] = long_entry.name3[j-11];
+						buffer[j*2+1] = long_entry.name3[j-11] >> 8;
+					} else if(j >= 13 && ((uint16_t*)tmp)[j - 13] != 0xFFFF){
+						buffer[j*2] = tmp[(j - 13)*2];
+						buffer[j*2+1] = tmp[(j - 13)*2+1];
 					}
 				}
 			} else {
 				seq_nb = 0;
 				check_sum = '\0';
-				memset(buffer, 0, MAX_NAME_SIZE);
+				memset(buffer, 0, MAX_NAME_SIZE*2);
 				err(1, "error: Bad sequence number or checksum\n");
 			}
 		} else if(check_sum == chkSum(&(short_entry.nameext)) && seq_nb == 0) {
-			iconv(iconv_utf16, (char **) &buffer, &in_byte_size, &char_buffer, &out_byte_size);
+			char* buffer_pointer = buffer;
+			char* char_buffer_pointer = char_buffer;
+			iconv(iconv_utf16, &buffer_pointer, &in_byte_size, &char_buffer_pointer, &out_byte_size);
+			in_byte_size = MAX_NAME_SIZE*2;
+			out_byte_size = MAX_NAME_SIZE;
 			char *filename = char_buffer;
 			setStat(short_entry,filename,filler,fillerdata,
 				(((uint32_t)short_entry.cluster_hi) << 16) | ((uint32_t)short_entry.cluster_lo));
@@ -301,7 +308,7 @@ time_t
 conv_time(uint16_t date_entry, uint16_t time_entry) {
 	struct tm * time_info;
 	time_t raw_time;
-	
+
 	time(&raw_time);
 	time_info = localtime(&raw_time);
 	time_info->tm_sec = (time_entry & 0x1f) << 1;
@@ -439,7 +446,7 @@ vfat_readdir(uint32_t cluster_no, fuse_fill_dir_t filler, void *fillerdata)
 			}
 		}
 	}
-	
+
 	return 0;
 }
 
@@ -502,7 +509,7 @@ vfat_resolve(const char *path, struct stat *st)
 	int i;
 	const char *final_name;
 	char *token = NULL, *path_copy;
-	
+
 	path_copy = malloc(strlen(path) + 1);
 	strncpy(path_copy, path, strlen(path) + 1);
 
@@ -510,10 +517,10 @@ vfat_resolve(const char *path, struct stat *st)
 
 	for(i = strlen(path); path[i] != '/'; i--);
 	final_name = path + i + 1;
-	
+
 	token = strtok(path_copy, "/");
 	sd.name = token;
-	
+
 	vfat_readdir(2, vfat_search_entry, &sd);
 
 	if(sd.found == 1) {
