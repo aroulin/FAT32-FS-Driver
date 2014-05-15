@@ -531,6 +531,7 @@ vfat_resolve(const char *path, struct stat *st)
 				return -ENOENT;
 			}
 			sd.name = token;
+			sd.found = 0;
 			vfat_readdir(((uint32_t) (sd.st)->st_ino), vfat_search_entry, &sd);
 			if(sd.found != 1) {
 				free(path_copy);
