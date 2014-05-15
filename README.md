@@ -29,3 +29,4 @@ More tasks...
 - [ ] find what's wrong about uids
 - [ ] get atime, ctime ... correct
 - [ ] see if -1 as end of cluster works
+- [ ] iconv UTF16
