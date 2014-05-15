@@ -15,6 +15,7 @@
 #include <string.h>
 #include <unistd.h>
 #include <stdbool.h>
+#include <time.h>
 
 #include "vfat.h"
 
@@ -281,6 +282,23 @@ read_cluster(uint32_t cluster_no, fuse_fill_dir_t filler, void *fillerdata,bool 
 	return DIRECTORY_NOT_FINISHED;
 }
 
+time_t
+conv_time(uint16_t date_entry, uint16_t time_entry) {
+	struct tm * time_info;
+	time_t raw_time;
+	
+	time(&raw_time);
+	time_info = localtime(&raw_time);
+	time_info->tm_sec = (time_entry & 0x1f) << 1;
+	time_info->tm_min = (time_entry & 0x1E0) >> 5;
+	time_info->tm_sec = (time_entry & 0xFE00) >> 11;
+	time_info->tm_mday = date_entry & 0x1F;
+	time_info->tm_mon = ((date_entry & 0x1E0) >> 5) - 1;
+	time_info->tm_year = ((date_entry & 0xFE00) >> 9) + 80;
+	return mktime(time_info);
+}
+
+
 void
 setStat(struct fat32_direntry dir_entry, char* buffer, fuse_fill_dir_t filler, void *fillerdata, uint32_t cluster_no){
 	struct stat* stat_str = malloc(sizeof(struct stat));
@@ -305,9 +323,9 @@ setStat(struct fat32_direntry dir_entry, char* buffer, fuse_fill_dir_t filler, v
 			stat_str->st_size = dir_entry.size;
 			stat_str->st_blksize = 0; // Ignored by FUSE
 			stat_str->st_blocks = 1;
-			stat_str->st_atime = time(&dir_entry.atime_date);
-			stat_str->st_mtime = time(&dir_entry.mtime_date);
-			stat_str->st_ctime = time(&dir_entry.ctime_date);
+			stat_str->st_atime = conv_time(dir_entry.atime_date, 0);
+			stat_str->st_mtime = conv_time(dir_entry.mtime_date, dir_entry.mtime_time);
+			stat_str->st_ctime = conv_time(dir_entry.ctime_date, dir_entry.ctime_time);
 			filler(fillerdata, buffer, stat_str, 0);
 }
 
