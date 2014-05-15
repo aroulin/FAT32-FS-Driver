@@ -4,7 +4,11 @@
 
 #include <sys/mman.h>
 #include <assert.h>
+#ifdef __APPLE__
+#include <machine/endian.h>
+#else
 #include <endian.h>
+#endif
 #include <err.h>
 #include <errno.h>
 #include <fcntl.h>
@@ -22,6 +26,7 @@
 #define DEBUG_PRINT printf
 #define END_OF_DIRECTORY 0
 #define DIRECTORY_NOT_FINISHED 1
+#define MAX_NAME_SIZE (13 * 0x14)
 
 // A kitchen sink for all important data about filesystem
 struct vfat_data {
@@ -195,11 +200,13 @@ chkSum (unsigned char *pFcbName) {
 static int
 read_cluster(uint32_t cluster_no, fuse_fill_dir_t filler, void *fillerdata,bool first_cluster) {
 	uint8_t check_sum = '\0';
-	char buffer[260]; // Max size of name: 13 * 0x14 = 260
+	uint16_t* buffer = calloc(MAX_NAME_SIZE, sizeof(uint16_t)); // Max size of name: 13 * 0x14 = 260
+	char* char_buffer = calloc(MAX_NAME_SIZE, sizeof(char));
 	int i, j, seq_nb = 0;
+	size_t in_byte_size = 2 * MAX_NAME_SIZE, out_byte_size = MAX_NAME_SIZE;
 	struct fat32_direntry short_entry;
 	struct fat32_direntry_long long_entry;
-	memset(buffer, 0, 260);
+	memset(buffer, 0, MAX_NAME_SIZE);
 
 	seek_cluster(cluster_no);
 
@@ -208,9 +215,10 @@ read_cluster(uint32_t cluster_no, fuse_fill_dir_t filler, void *fillerdata,bool 
 			err(1, "read(short_dir)");
 		}
 
-		if(i< 64 && first_cluster && cluster_no != 2){
+		if(i < 64 && first_cluster && cluster_no != 2){
 			char* filename = (i == 0) ? "." : "..";
-			setStat(short_entry,filename,filler,fillerdata, (((uint32_t)short_entry.cluster_hi) << 16) | ((uint32_t)short_entry.cluster_lo));
+			setStat(short_entry,filename,filler,fillerdata,
+				(((uint32_t)short_entry.cluster_hi) << 16) | ((uint32_t)short_entry.cluster_lo));
 
 			continue;
 		}
@@ -218,6 +226,8 @@ read_cluster(uint32_t cluster_no, fuse_fill_dir_t filler, void *fillerdata,bool 
 		if(((uint8_t) short_entry.nameext[0]) == 0xE5){
 			continue;
 		} else if(short_entry.nameext[0] == 0x00) {
+			free(buffer);
+			free(char_buffer);
 			return END_OF_DIRECTORY;
 		} else if(short_entry.nameext[0] == 0x05) {
 			short_entry.nameext[0] = (char) 0xE5;
@@ -241,44 +251,49 @@ read_cluster(uint32_t cluster_no, fuse_fill_dir_t filler, void *fillerdata,bool 
 			} else if (check_sum == long_entry.csum  && long_entry.seq == seq_nb) {
 				seq_nb -= 1;
 
-				char tmp[260];
-				memset(tmp, 0, 260);
+				uint16_t tmp[MAX_NAME_SIZE];
+				memset(tmp, 0, MAX_NAME_SIZE);
 
-				for(j = 0; j < 260; j++) {
+				for(j = 0; j < MAX_NAME_SIZE; j++) {
 					tmp[j] = buffer[j];
 				}
 
-				memset(buffer, 0, 260);
+				memset(buffer, 0, MAX_NAME_SIZE);
 
-				for(j = 0; j < 260; j++) {
+				for(j = 0; j < MAX_NAME_SIZE; j++) {
 					if(j < 5 && long_entry.name1[j] != 0xFFFF) {
 						buffer[j] = long_entry.name1[j];
 					} else if(j < 11 && long_entry.name2[j - 5] != 0xFFFF) {
 						buffer[j] = long_entry.name2[j - 5];
 					} else if(j < 13 && long_entry.name3[j - 11] != 0xFFFF) {
 						buffer[j] = long_entry.name3[j - 11];
-					} else if(tmp[j - 13] != (char) 0xFF){
+					} else if(j >= 13 && tmp[j - 13] != 0xFFFF){
 						buffer[j] = tmp[j - 13];
 					}
 				}
 			} else {
 				seq_nb = 0;
 				check_sum = '\0';
-				memset(buffer, 0, 260);
+				memset(buffer, 0, MAX_NAME_SIZE);
 				err(1, "error: Bad sequence number or checksum\n");
 			}
 		} else if(check_sum == chkSum(&(short_entry.nameext)) && seq_nb == 0) {
-			char *filename = buffer;
-			setStat(short_entry,filename,filler,fillerdata, (((uint32_t)short_entry.cluster_hi) << 16) | ((uint32_t)short_entry.cluster_lo));
+			iconv(iconv_utf16, (char **) &buffer, &in_byte_size, &char_buffer, &out_byte_size);
+			char *filename = char_buffer;
+			setStat(short_entry,filename,filler,fillerdata,
+				(((uint32_t)short_entry.cluster_hi) << 16) | ((uint32_t)short_entry.cluster_lo));
 			check_sum = '\0';
-			memset(buffer, 0, 260);
+			memset(buffer, 0, MAX_NAME_SIZE);
 		} else {
-			char *filename = buffer;
+			char *filename = char_buffer;
 			getfilename(short_entry.nameext, filename);
-			setStat(short_entry,filename,filler,fillerdata, (((uint32_t)short_entry.cluster_hi) << 16) | ((uint32_t)short_entry.cluster_lo));
+			setStat(short_entry,filename,filler,fillerdata,
+				(((uint32_t)short_entry.cluster_hi) << 16) | ((uint32_t)short_entry.cluster_lo));
 		}
 	}
 
+	free(buffer);
+	free(char_buffer);
 	return DIRECTORY_NOT_FINISHED;
 }
 
@@ -485,7 +500,8 @@ vfat_resolve(const char *path, struct stat *st)
 {
 	struct vfat_search_data sd;
 	int i;
-	char *final_name, *token = NULL, *path_copy;
+	const char *final_name;
+	char *token = NULL, *path_copy;
 	
 	path_copy = malloc(strlen(path) + 1);
 	strncpy(path_copy, path, strlen(path) + 1);
