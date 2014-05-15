@@ -57,7 +57,7 @@ vfat_init(const char *dev)
 {
 	uint16_t rootDirSectors;
 	uint32_t fatSz,totSec,dataSec,countofClusters;
-	iconv_utf16 = iconv_open("utf-8", "utf-16"); // from utf-16 to utf-8
+	iconv_utf16 = iconv_open("utf-8", "utf-16le"); // from utf-16 to utf-8
 	// These are useful so that we can setup correct permissions in the mounted directories
 	mount_uid = getuid();
 	mount_gid = getgid();
