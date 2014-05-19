@@ -16,6 +16,7 @@
 #include <unistd.h>
 #include <stdbool.h>
 #include <time.h>
+#include <signal.h>
 
 #include "vfat.h"
 
@@ -105,7 +106,7 @@ vfat_init(const char *dev)
 	} else if(countofClusters < 65525) {
 		err(1,"error: Volume is FAT16.\n");
 	} else {
-		printf("Volume is FAT32.\n");
+		DEBUG_PRINT("Volume is FAT32.\n");
 	}
 
 	// Check all other fields
@@ -173,7 +174,7 @@ vfat_init(const char *dev)
 	// Microsoft specs do not say anything to be forced about sectors_per_fat
 	// and other fields of fat_boot_fat32 so we don't check them
 
-	printf("Volume seems really FAT32.\n");
+	DEBUG_PRINT("Volume seems really FAT32.\n");
 	if(lseek(vfat_info.fs, 0, SEEK_SET) == -1) {
 		err(1, "lseek(0)");
 	}
@@ -313,7 +314,7 @@ conv_time(uint16_t date_entry, uint16_t time_entry) {
 	time_info = localtime(&raw_time);
 	time_info->tm_sec = (time_entry & 0x1f) << 1;
 	time_info->tm_min = (time_entry & 0x1E0) >> 5;
-	time_info->tm_sec = (time_entry & 0xFE00) >> 11;
+	time_info->tm_hour = (time_entry & 0xFE00) >> 11;
 	time_info->tm_mday = date_entry & 0x1F;
 	time_info->tm_mon = ((date_entry & 0x1E0) >> 5) - 1;
 	time_info->tm_year = ((date_entry & 0xFE00) >> 9) + 80;
@@ -324,6 +325,7 @@ conv_time(uint16_t date_entry, uint16_t time_entry) {
 void
 setStat(struct fat32_direntry dir_entry, char* buffer, fuse_fill_dir_t filler, void *fillerdata, uint32_t cluster_no){
 	struct stat* stat_str = malloc(sizeof(struct stat));
+			memset(stat_str, 0, sizeof(struct stat));
 			stat_str->st_dev = 0; // Ignored by FUSE
 			stat_str->st_ino = cluster_no; // Ignored by FUSE unless overridden
 			if(dir_entry.attr & ATTR_READ_ONLY){
@@ -349,6 +351,7 @@ setStat(struct fat32_direntry dir_entry, char* buffer, fuse_fill_dir_t filler, v
 			stat_str->st_mtime = conv_time(dir_entry.mtime_date, dir_entry.mtime_time);
 			stat_str->st_ctime = conv_time(dir_entry.ctime_date, dir_entry.ctime_time);
 			filler(fillerdata, buffer, stat_str, 0);
+			free(stat_str);
 }
 
 char*
@@ -440,8 +443,8 @@ vfat_readdir(uint32_t cluster_no, fuse_fill_dir_t filler, void *fillerdata)
 		if(end_of_read == END_OF_DIRECTORY) {
 			eof = true;
 		} else {
-			next_cluster_no = next_cluster(next_cluster_no);
-			if(next_cluster_no == 0xFFFFFFFF) {
+			next_cluster_no = 0x0FFFFFFF & next_cluster(next_cluster_no);
+			if(next_cluster_no >= (uint32_t) 0x0FFFFFF8) {
 				eof = true;
 			}
 		}
@@ -463,7 +466,7 @@ next_cluster(uint32_t cluster_no) {
 		err(1, "read(%lu)",sizeof(uint32_t));
 	}
 
-	if(lseek(vfat_info.fs, first_fat + vfat_info.fat_boot.fat32.sectors_per_fat * vfat_info.fat_boot.bytes_per_sector + cluster_no*sizeof(uint32_t) , SEEK_SET) == -1) {
+	if(lseek(vfat_info.fs, first_fat + vfat_info.fat_boot.fat32.sectors_per_fat * vfat_info.fat_boot.bytes_per_sector + cluster_no * sizeof(uint32_t) , SEEK_SET) == -1) {
 		err(1, "lseek(%d)", first_fat);
 	}
 
@@ -513,6 +516,7 @@ vfat_resolve(const char *path, struct stat *st)
 	path_copy = malloc(strlen(path) + 1);
 	strncpy(path_copy, path, strlen(path) + 1);
 
+	memset(&sd, 0, sizeof(struct vfat_search_data));
 	sd.st = st;
 
 	for(i = strlen(path); path[i] != '/'; i--);
@@ -595,7 +599,8 @@ static int
 vfat_fuse_read(const char *path, char *buf, size_t size, off_t offs,
 	       struct fuse_file_info *fi)
 {
-	DEBUG_PRINT("fuse read %s\n", path);
+	DEBUG_PRINT("fuse readOOHHO %s\n", path);
+	DEBUG_PRINT("offs: %lx\n", offs);
 	assert(size > 1);
 
 	struct stat st;
@@ -628,7 +633,7 @@ vfat_fuse_read(const char *path, char *buf, size_t size, off_t offs,
 		if(read(vfat_info.fs, buf+cnt, size) != size) {
 			err(1, "read cluster-offs > size failed\n");
 		}
-		return 0;
+		return 0; // TODO CHECK THIS
 	} else {
 		if(read(vfat_info.fs, buf+cnt, cluster_size - offs) != cluster_size-offs) {
 			err(1, "read cluster-offs <= size failed\n");
@@ -639,8 +644,10 @@ vfat_fuse_read(const char *path, char *buf, size_t size, off_t offs,
 	while(size - cnt > cluster_size) {
 		cluster_no = next_cluster(cluster_no);
 		seek_cluster(cluster_no);
-		if(cluster_no == -1) {
+		DEBUG_PRINT("Read cluster_no %x\n", cluster_no);
+		if((cluster_no & 0x0fffffff) >= 0x0FFFFFF8) {
 		    memset(buf+cnt, 0, size-cnt);
+		    return cnt;
 		}
 		if(read(vfat_info.fs, buf+cnt, cluster_size) != cluster_size) {
 			err(1, "read cluster_size failed\n");
@@ -650,8 +657,9 @@ vfat_fuse_read(const char *path, char *buf, size_t size, off_t offs,
 
 	cluster_no = next_cluster(cluster_no);
 	seek_cluster(cluster_no);
-	if(cluster_no == -1) {
+	if((cluster_no & 0x0fffffff) >= 0x0FFFFFF8) {
 	    memset(buf+cnt, 0, size-cnt);
+	    return cnt;
 	}
 
 	if(cnt < size) {
@@ -683,9 +691,15 @@ static struct fuse_operations vfat_available_ops = {
 	.read = vfat_fuse_read,
 };
 
+void int_handler(int sig) {
+	iconv_close(iconv_utf16);
+	exit(0);
+}
+
 int
 main(int argc, char **argv)
 {
+	signal(SIGINT, int_handler);
 	struct fuse_args args = FUSE_ARGS_INIT(argc, argv);
 
 	fuse_opt_parse(&args, NULL, NULL, vfat_opt_args);
