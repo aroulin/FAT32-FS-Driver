@@ -32,3 +32,6 @@ More tasks...
 - [X] iconv UTF16
 - [ ] look at end signal (0xfffffffd)
 - [ ] ignore volume ID entry (not long entries)
+- [ ] Write the report/readme
+- [ ] Change compiler to gcc
+- [ ] remove magic numbers
