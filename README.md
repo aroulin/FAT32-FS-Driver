@@ -30,8 +30,7 @@ More tasks...
 - [X] get atime, ctime ... correct
 - [x] see if -1 as end of cluster works
 - [X] iconv UTF16
-- [ ] look at end signal (0xfffffffd)
+- [x] directories should have size
 - [x] ignore volume ID entry (not long entries)
-- [ ] Write the report/readme
-- [ ] Change compiler to gcc
 - [x] remove magic numbers
+- [x] Write the report/readme
