@@ -28,10 +28,10 @@ More tasks...
 - [X] Handle better subdirectories
 - [X] find what's wrong about uids
 - [X] get atime, ctime ... correct
-- [ ] see if -1 as end of cluster works
+- [x] see if -1 as end of cluster works
 - [X] iconv UTF16
 - [ ] look at end signal (0xfffffffd)
-- [ ] ignore volume ID entry (not long entries)
+- [x] ignore volume ID entry (not long entries)
 - [ ] Write the report/readme
 - [ ] Change compiler to gcc
-- [ ] remove magic numbers
+- [x] remove magic numbers
