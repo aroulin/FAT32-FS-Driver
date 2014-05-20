@@ -1,4 +1,3 @@
-// vim: noet:ts=8:sts=8
 #define FUSE_USE_VERSION 26
 #define _GNU_SOURCE
 
@@ -586,7 +585,7 @@ static int
 vfat_fuse_getattr(const char *path, struct stat *st)
 {
 	/* XXX: This is example code, replace with your own implementation */
-	DEBUG_PRINT("fuse getattr %s\n", path);
+	//DEBUG_PRINT("fuse getattr %s\n", path);
 	// No such file
 	if (strcmp(path, "/") == 0) {
 		st->st_dev = 0; // Ignored by FUSE
