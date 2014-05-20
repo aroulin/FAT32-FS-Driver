@@ -18,16 +18,7 @@ See readme.md for full details of the implemented steps. Everything should be im
 
 ####   clang:
 
-First of all, we used the 'clang' compiler in order to have more details on the errors we could have made. It came very handy when we used masks:
-```c
-short_entry.attr & 0x3f == 0x3f
-```
-was not exactly what we expected due to the priority of operators and thanks to 'clang' we corrected it to:
-```c
-(short_entry.attr & 0x3f) == 0x3f
-```
-This is just a simple example of how 'clang' was useful.
-
+First of all, we used the 'clang' compiler in order to have more details on the errors we could have made.
 
 ####   gdb and valgrind:
 
@@ -56,3 +47,14 @@ One of the difficulties we had was to correctly implement the long names parsing
 
 We had a lot of trouble to use iconv. We did not know if we should give a char** that we previously modified or if we had to let C do its magic.
 There was no real API for iconv and that made the task more difficult.
+
+
+#### Testing:
+
+In order to test whether our driver worked or not, we used the given commands in the project description.
+But usually, we just launched 'ls' in the directory to see if it worked compared to a normal driver.
+Moreover, we read a .mp4 file and a .mp3 file on a usb key to see if everything was working.
+
+#### Implementation:
+
+
