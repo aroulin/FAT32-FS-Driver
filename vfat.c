@@ -348,23 +348,34 @@ setStat(struct fat32_direntry dir_entry, char* buffer, fuse_fill_dir_t filler, v
 			memset(stat_str, 0, sizeof(struct stat));
 			stat_str->st_dev = 0; // Ignored by FUSE
 			stat_str->st_ino = cluster_no; // Ignored by FUSE unless overridden
-			if(dir_entry.attr & ATTR_READ_ONLY){
+			if((dir_entry.attr & ATTR_READ_ONLY) == ATTR_READ_ONLY){
 				stat_str->st_mode = S_IRUSR | S_IRGRP | S_IROTH;
 			}
 			else{
 				stat_str->st_mode = S_IRWXU | S_IRWXG | S_IRWXO;
 			}
-			if(dir_entry.attr & ATTR_DIRECTORY) {
+			if((dir_entry.attr & ATTR_DIRECTORY) == ATTR_DIRECTORY) {
 				stat_str->st_mode |= S_IFDIR;
+				int cnt = 0;
+				uint32_t next_cluster_no = cluster_no;
+				off_t pos = lseek(vfat_info.fs, 0, SEEK_CUR);
+				while(next_cluster_no < (uint32_t) 0x0FFFFFF8) {
+					cnt++;
+					next_cluster_no = next_cluster(0x0FFFFFFF & next_cluster_no);
+				}
+				if(lseek(vfat_info.fs, pos, SEEK_SET) == -1) {
+					err(1, "Couldn't return to initial position: %lx", pos);
+				}
+				stat_str->st_size = cnt * vfat_info.fat_boot.sectors_per_cluster*vfat_info.fat_boot.bytes_per_sector;
 			}
 			else {
 				stat_str->st_mode |= S_IFREG;
+				stat_str->st_size = dir_entry.size;
 			}
 			stat_str->st_nlink = 1;
 			stat_str->st_uid = mount_uid;
 			stat_str->st_gid = mount_gid;
 			stat_str->st_rdev = 0;
-			stat_str->st_size = dir_entry.size;
 			stat_str->st_blksize = 0; // Ignored by FUSE
 			stat_str->st_blocks = 1;
 			stat_str->st_atime = conv_time(dir_entry.atime_date, 0);
@@ -585,7 +596,17 @@ vfat_fuse_getattr(const char *path, struct stat *st)
 		st->st_uid = mount_uid;
 		st->st_gid = mount_gid;
 		st->st_rdev = 0;
-		st->st_size = 0;
+		int cnt = 0;
+		uint32_t next_cluster_no = vfat_info.root_cluster;
+		off_t pos = lseek(vfat_info.fs, 0, SEEK_CUR);
+		while(next_cluster_no < (uint32_t) 0x0FFFFFF8) {
+			cnt++;
+			next_cluster_no = next_cluster(0x0FFFFFFF & next_cluster_no);
+		}
+		if(lseek(vfat_info.fs, pos, SEEK_SET) == -1) {
+			err(1, "Couldn't return to initial position: %lx", pos);
+		}
+		st->st_size = cnt * vfat_info.fat_boot.sectors_per_cluster*vfat_info.fat_boot.bytes_per_sector;
 		st->st_blksize = 0; // Ignored by FUSE
 		st->st_blocks = 1;
 		return 0;
