@@ -585,7 +585,7 @@ static int
 vfat_fuse_getattr(const char *path, struct stat *st)
 {
 	/* XXX: This is example code, replace with your own implementation */
-	//DEBUG_PRINT("fuse getattr %s\n", path);
+	DEBUG_PRINT("fuse getattr %s\n", path);
 	// No such file
 	if (strcmp(path, "/") == 0) {
 		st->st_dev = 0; // Ignored by FUSE
@@ -622,7 +622,7 @@ static int
 vfat_fuse_readdir(const char *path, void *buf,
 		  fuse_fill_dir_t filler, off_t offs, struct fuse_file_info *fi)
 {
-	//DEBUG_PRINT("fuse readdir %s\n", path);
+	DEBUG_PRINT("fuse readdir %s\n", path);
 	//assert(offs == 0);
 
 	struct stat st;
@@ -639,7 +639,7 @@ static int
 vfat_fuse_read(const char *path, char *buf, size_t size, off_t offs,
 	       struct fuse_file_info *fi)
 {
-	//DEBUG_PRINT("fuse read %s\n", path);
+	DEBUG_PRINT("fuse read %s\n", path);
 	assert(size > 1);
 
 	struct stat st;
