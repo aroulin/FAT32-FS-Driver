@@ -36,12 +36,14 @@ One of the difficulties we had was to correctly implement the long names parsing
 We used iconv to convert UTF-16LE long names to UTF-8.
 There was no real API for iconv and that made the task more difficult.
 
-#### Testing:
+### 3. Testing:
 
 In order to test whether our driver worked or not, we used the given commands in the project description.
 But usually, we just ran `diff -r dest dest2` in the directory to see if it worked compared to a normal driver.
 Moreover, we read a .mp4 video file and a .mp3 file on a usb key to see if everything was working.
 
-#### Implementation:
+### 4. Implementation:
 
+We followed the steps given in the statement. We always preferred iterative algorithms compared to recursive ones (like finding a file given a path) to avoid the possibility of stack overflows.
 
+We used the `vfat_search_entry` function as a filler function for `vfat_readdir` in order to locate a file and get it's attributes (size, cluster number) in a `stat` structure.
