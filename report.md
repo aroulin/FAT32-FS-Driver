@@ -48,6 +48,8 @@ We followed the steps given in the statement. We always preferred iterative algo
 
 We used the `vfat_search_entry` function as a filler function for `vfat_readdir` in order to locate a file and get it's attributes (size, cluster number) in a `stat` structure.
 
+We also thoroughly checked that the file system was really a FAT32 file system (See `vfat_init`).
+
 We choosed to give sizes to directories as linux does. The size of the directory is like the size of file, the number of clusters its directories entries take.
 
 We also implemented the atime,ctime,etc... fields and we had to convert the date format of the FAT32 to the one (time_t) in linux.
