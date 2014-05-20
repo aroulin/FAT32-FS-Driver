@@ -50,4 +50,6 @@ We used the `vfat_search_entry` function as a filler function for `vfat_readdir`
 
 We choosed to give sizes to directories as linux does. The size of the directory is like the size of file, the number of clusters its directories entries take.
 
-We also implemented the atime,ctime,etc... fields and we had to convert the date format of the FAT32 to the on in linux.
+We also implemented the atime,ctime,etc... fields and we had to convert the date format of the FAT32 to the one (time_t) in linux.
+
+In order to really have zero memory leaks in valgrind, we also implemented a CTRL-C signal handler in order to `iconv_close` the iconv converter.
