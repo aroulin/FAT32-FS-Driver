@@ -8,15 +8,15 @@ Valentin Rutz
 OS assignement 3 report:
 ========================
 
-1. Status of the implementation:
+### 1. Status of the implementation:
 
 See readme.md for full details of the implemented steps. Everything should be implemented from parsing names to reading videos.
 
 
-2. Experiences about implementation and coding:
+### 2. Experiences about implementation and coding:
 
 
-  * CLANG:
+####   CLANG:
 
    First of all, we used the 'clang' compiler in order to have more details on the errors we could have made. It came very handy when we used masks:
 ```c
@@ -29,7 +29,7 @@ was not exactly what we expected due to the priority of operators and thanks to 
 This is just a simple example of how 'clang' was useful.
 
 
-  * GDB, valgrind:
+####   GDB, valgrind:
 
 
    Since we manipulated a couple of pointers, we had several segmentation faults. To find these, we used 'gdb' and 'valgrind'.
