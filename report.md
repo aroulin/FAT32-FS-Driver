@@ -47,3 +47,7 @@ Moreover, we read a .mp4 video file and a .mp3 file on a usb key to see if every
 We followed the steps given in the statement. We always preferred iterative algorithms compared to recursive ones (like finding a file given a path) to avoid the possibility of stack overflows.
 
 We used the `vfat_search_entry` function as a filler function for `vfat_readdir` in order to locate a file and get it's attributes (size, cluster number) in a `stat` structure.
+
+We choosed to give sizes to directories as linux does. The size of the directory is like the size of file, the number of clusters its directories entries take.
+
+We also implemented the atime,ctime,etc... fields and we had to convert the date format of the FAT32 to the on in linux.
