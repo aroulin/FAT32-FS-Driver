@@ -30,8 +30,8 @@ Status of implementation
 
 More tasks...
 
-- [X] See if videos or music works
-      -> Yes, just make follow these steps: 1. `mount` testfs.fat 2. Insert your media file 3. 
+- [X] Videos or music works
+- [X] Read from USB key
 - [X] find what's wrong about uids
       -> Had to declare mount_[gu]id static to avoid modifications to it
 - [X] get atime, ctime,... correct
@@ -43,7 +43,7 @@ More tasks...
 - [X] directories should have size
       Size of directory = number of clusters used for its directories entries (like linux `mount`)
 - [X] ignore volume ID entries
-      -> In order to not print NoFileName file
+      -> In order to not print device name as a file
 - [X] remove most magic numbers
       -> like root cluster no is not always 2
 - [X] Write the report/readme
