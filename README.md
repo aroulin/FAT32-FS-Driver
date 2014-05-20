@@ -3,9 +3,10 @@ FAT32-FS-Driver
 
 Operating Systems Assignment 3
 
-Status of implementation
 - [ ] Todo
 - [X] Done
+
+Status of implementation
 
 - [X] Read the first 512 bytes of the device
 - [X] Parse BPB sector, read basic information (sector size, sectors per cluster, FAT
@@ -29,7 +30,8 @@ Status of implementation
 
 More tasks...
 
-- [X] Handle better subdirectories
+- [X] See if videos or music works
+      -> Yes, just make follow these steps: 1. `mount` testfs.fat 2. Insert your media file 3. 
 - [X] find what's wrong about uids
       -> Had to declare mount_[gu]id static to avoid modifications to it
 - [X] get atime, ctime,... correct
