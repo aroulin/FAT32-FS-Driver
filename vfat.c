@@ -31,6 +31,7 @@ struct vfat_data {
 	int		fs;
 	struct fat_boot  fat_boot;
 	/* XXX add your code here */
+	uint32_t root_cluster;
 };
 
 struct vfat_data vfat_info;
@@ -58,7 +59,8 @@ static void
 vfat_init(const char *dev)
 {
 	uint16_t rootDirSectors;
-	uint32_t fatSz,totSec,dataSec,countofClusters;
+	uint32_t fatSz, totSec, dataSec, countofClusters, first_fat;
+	uint8_t fat_0;
 	iconv_utf16 = iconv_open("utf-8", "utf-16le"); // from utf-16 to utf-8
 	// These are useful so that we can setup correct permissions in the mounted directories
 	mount_uid = getuid();
@@ -159,8 +161,20 @@ vfat_init(const char *dev)
 
 	if(vfat_info.fat_boot.media_info != 0xF0 &&
 		vfat_info.fat_boot.media_info < 0xF8) {
-		err(1, "wrong media info\n");
-		//TODO CHECK same number in FAT[0]
+		err(1, "Wrong media info\n");
+	}
+	
+	first_fat = vfat_info.fat_boot.reserved_sectors * vfat_info.fat_boot.bytes_per_sector;
+	if(lseek(vfat_info.fs, first_fat, SEEK_SET) == -1) {
+		err(1, "lseek(%u)", first_fat);
+	}
+
+	if(read(vfat_info.fs, &fat_0, sizeof(uint8_t)) != sizeof(uint8_t)) {
+		err(1, "read(%lu)", sizeof(uint8_t));
+	}
+	
+	if(fat_0 != vfat_info.fat_boot.media_info) {
+		err(1, "Media info is different in FAT[0]\n");
 	}
 
 	if(vfat_info.fat_boot.sectors_per_fat_small != 0) {
@@ -170,6 +184,8 @@ vfat_init(const char *dev)
 	if(vfat_info.fat_boot.total_sectors == 0) {
 		err(1, "total_sectors must be non-zero\n");
 	}
+	
+	vfat_info.root_cluster = 0xFFFFFFF & vfat_info.fat_boot.fat32.root_cluster;
 
 	// Microsoft specs do not say anything to be forced about sectors_per_fat
 	// and other fields of fat_boot_fat32 so we don't check them
@@ -265,11 +281,11 @@ read_cluster(uint32_t cluster_no, fuse_fill_dir_t filler, void *fillerdata,bool 
 						buffer[j*2] = long_entry.name1[j];
 						buffer[j*2+1] = long_entry.name1[j] >> 8;
 					} else if(j < 11 && long_entry.name2[j - 5] != 0xFFFF) {
-						buffer[j*2] = long_entry.name2[j-5];
-						buffer[j*2+1] = long_entry.name2[j-5] >> 8;
+						buffer[j*2] = long_entry.name2[j - 5];
+						buffer[j*2+1] = long_entry.name2[j - 5] >> 8;
 					} else if(j < 13 && long_entry.name3[j - 11] != 0xFFFF) {
-						buffer[j*2] = long_entry.name3[j-11];
-						buffer[j*2+1] = long_entry.name3[j-11] >> 8;
+						buffer[j*2] = long_entry.name3[j - 11];
+						buffer[j*2+1] = long_entry.name3[j - 11] >> 8;
 					} else if(j >= 13 && ((uint16_t*)tmp)[j - 13] != 0xFFFF){
 						buffer[j*2] = tmp[(j - 13)*2];
 						buffer[j*2+1] = tmp[(j - 13)*2+1];
@@ -281,7 +297,11 @@ read_cluster(uint32_t cluster_no, fuse_fill_dir_t filler, void *fillerdata,bool 
 				memset(buffer, 0, MAX_NAME_SIZE*2);
 				err(1, "error: Bad sequence number or checksum\n");
 			}
-		} else if(check_sum == chkSum(&(short_entry.nameext)) && seq_nb == 0) {
+		} else if((short_entry.attr & ATTR_VOLUME_ID) == ATTR_VOLUME_ID) {
+			seq_nb = 0;
+			check_sum = '\0';
+			memset(buffer, 0, MAX_NAME_SIZE*2);
+		} else if(check_sum == chkSum((unsigned char *) &(short_entry.nameext)) && seq_nb == 0) {
 			char* buffer_pointer = buffer;
 			char* char_buffer_pointer = char_buffer;
 			iconv(iconv_utf16, &buffer_pointer, &in_byte_size, &char_buffer_pointer, &out_byte_size);
@@ -525,7 +545,7 @@ vfat_resolve(const char *path, struct stat *st)
 	token = strtok(path_copy, "/");
 	sd.name = token;
 
-	vfat_readdir(2, vfat_search_entry, &sd);
+	vfat_readdir(vfat_info.root_cluster, vfat_search_entry, &sd);
 
 	if(sd.found == 1) {
 		while(strcmp(sd.name, final_name) != 0) {
@@ -582,7 +602,7 @@ static int
 vfat_fuse_readdir(const char *path, void *buf,
 		  fuse_fill_dir_t filler, off_t offs, struct fuse_file_info *fi)
 {
-	DEBUG_PRINT("fuse readdir %s\n", path);
+	//DEBUG_PRINT("fuse readdir %s\n", path);
 	//assert(offs == 0);
 
 	struct stat st;
@@ -590,7 +610,7 @@ vfat_fuse_readdir(const char *path, void *buf,
 		vfat_resolve(path+1, &st);
 		vfat_readdir((uint32_t)st.st_ino, filler, buf);
 	} else {
-	    vfat_readdir(2, filler, buf);
+	    vfat_readdir(vfat_info.root_cluster, filler, buf);
 	}
 	return 0;
 }
@@ -599,8 +619,7 @@ static int
 vfat_fuse_read(const char *path, char *buf, size_t size, off_t offs,
 	       struct fuse_file_info *fi)
 {
-	DEBUG_PRINT("fuse readOOHHO %s\n", path);
-	DEBUG_PRINT("offs: %lx\n", offs);
+	//DEBUG_PRINT("fuse read %s\n", path);
 	assert(size > 1);
 
 	struct stat st;
